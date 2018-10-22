@@ -1,4 +1,21 @@
+"""Trainining script for WaveRNN vocoder
 
+usage: train.py [options]
+
+options:
+    --data-root=<dir>            Directory contains preprocessed features.
+    --checkpoint-dir=<dir>       Directory where to save model checkpoints [default: checkpoints].
+    --hparams=<params>           Hyper parameters [default: ].
+    --preset=<json>              Path of preset parameters (json).
+    --checkpoint=<path>          Restore model from checkpoint path if given.
+    --restore-parts=<path>       Restore part of the model.
+    --log-event-path=<name>      Log event path.
+    --reset-optimizer            Reset optimizer.
+    --speaker-id=<N>             Use specific speaker of data in case for multi-speaker datasets.
+    -h, --help                   Show this help message and exit
+"""
+from docopt import docopt
+import time
 import matplotlib.pyplot as plt
 import math, pickle, os
 import numpy as np
@@ -8,26 +25,12 @@ from torch import optim
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from utils import *
-from dsp import *
-
-bits = 9
-seq_len = hop_length * 5
-
-%mkdir -p 'model_checkpoints/'
-
-MODEL_PATH = f'model_checkpoints/{notebook_name}.pyt'
-DATA_PATH = f'data/{notebook_name}/'
-STEP_PATH = f'model_checkpoints/{notebook_name}_step.npy'
-GEN_PATH = f'model_outputs/{notebook_name}/'
-%mkdir -p $GEN_PATH
+from utils.display import *
+from utils.dsp import *
+from hparams import hparams
 
 
-with open(f'{DATA_PATH}dataset_ids.pkl', 'rb') as f:
-    dataset_ids = pickle.load(f)
-test_ids = dataset_ids[-50:]
-dataset_ids = dataset_ids[:-50]
-class AudiobookDataset(Dataset):
+class AudioDataset(Dataset):
     def __init__(self, ids, path):
         self.path = path
         self.metadata = ids
@@ -41,8 +44,8 @@ class AudiobookDataset(Dataset):
     def __len__(self):
         return len(self.metadata)
 
-def collate(batch) :
 
+def collate(batch):
     pad = 2
     mel_win = seq_len // hop_length + 2 * pad
     max_offsets = [x[0].shape[-1] - (mel_win + 2 * pad) for x in batch]
@@ -67,20 +70,16 @@ def collate(batch) :
 
     return x_input, mels, y_coarse
 
-dataset = AudiobookDataset(dataset_ids, DATA_PATH)
-data_loader = DataLoader(dataset, collate_fn=collate, batch_size=32,
-                         num_workers=0, shuffle=True)
 
-
-class ResBlock(nn.Module) :
-    def __init__(self, dims) :
+class ResBlock(nn.Module):
+    def __init__(self, dims):
         super().__init__()
         self.conv1 = nn.Conv1d(dims, dims, kernel_size=1, bias=False)
         self.conv2 = nn.Conv1d(dims, dims, kernel_size=1, bias=False)
         self.batch_norm1 = nn.BatchNorm1d(dims)
         self.batch_norm2 = nn.BatchNorm1d(dims)
 
-    def forward(self, x) :
+    def forward(self, x):
         residual = x
         x = self.conv1(x)
         x = self.batch_norm1(x)
@@ -89,8 +88,9 @@ class ResBlock(nn.Module) :
         x = self.batch_norm2(x)
         return x + residual
 
-class MelResNet(nn.Module) :
-    def __init__(self, res_blocks, in_dims, compute_dims, res_out_dims) :
+
+class MelResNet(nn.Module):
+    def __init__(self, res_blocks, in_dims, compute_dims, res_out_dims):
         super().__init__()
         self.conv_in = nn.Conv1d(in_dims, compute_dims, kernel_size=5, bias=False)
         self.batch_norm = nn.BatchNorm1d(compute_dims)
@@ -99,29 +99,31 @@ class MelResNet(nn.Module) :
             self.layers.append(ResBlock(compute_dims))
         self.conv_out = nn.Conv1d(compute_dims, res_out_dims, kernel_size=1)
 
-    def forward(self, x) :
+    def forward(self, x):
         x = self.conv_in(x)
         x = self.batch_norm(x)
         x = F.relu(x)
-        for f in self.layers : x = f(x)
+        for f in self.layers: x = f(x)
         x = self.conv_out(x)
         return x
 
-class Stretch2d(nn.Module) :
-    def __init__(self, x_scale, y_scale) :
+
+class Stretch2d(nn.Module):
+    def __init__(self, x_scale, y_scale):
         super().__init__()
         self.x_scale = x_scale
         self.y_scale = y_scale
 
-    def forward(self, x) :
+    def forward(self, x):
         b, c, h, w = x.size()
         x = x.unsqueeze(-1).unsqueeze(3)
         x = x.repeat(1, 1, 1, self.y_scale, 1, self.x_scale)
         return x.view(b, c, h * self.y_scale, w * self.x_scale)
 
-class UpsampleNetwork(nn.Module) :
+
+class UpsampleNetwork(nn.Module):
     def __init__(self, feat_dims, upsample_scales, compute_dims,
-                 res_blocks, res_out_dims, pad) :
+                 res_blocks, res_out_dims, pad):
         super().__init__()
         total_scale = np.cumproduct(upsample_scales)[-1]
         self.indent = pad * total_scale
@@ -137,7 +139,7 @@ class UpsampleNetwork(nn.Module) :
             self.up_layers.append(stretch)
             self.up_layers.append(conv)
 
-    def forward(self, m) :
+    def forward(self, m):
         aux = self.resnet(m).unsqueeze(1)
         aux = self.resnet_stretch(aux)
         aux = aux.squeeze(1)
@@ -147,7 +149,7 @@ class UpsampleNetwork(nn.Module) :
         return m.transpose(1, 2), aux.transpose(1, 2)
 
 
-class Model(nn.Module) :
+class Model(nn.Module):
     def __init__(self, rnn_dims, fc_dims, bits, pad, upsample_factors,
                  feat_dims, compute_dims, res_out_dims, res_blocks):
         super().__init__()
@@ -251,7 +253,7 @@ class Model(nn.Module) :
                 x = torch.FloatTensor([[sample]]).cuda()
                 if i % 100 == 0 :
                     speed = int((i + 1) / (time.time() - start))
-                    display('%i/%i -- Speed: %i samples/sec', (i + 1, seq_len, speed))
+                    print('%i/%i -- Speed: %i samples/sec'%(i + 1, seq_len, speed))
         output = torch.stack(output).cpu().numpy()
         librosa.output.write_wav(save_path, output, sample_rate)
         self.train()
@@ -265,14 +267,6 @@ class Model(nn.Module) :
         gru_cell.bias_ih.data = gru.bias_ih_l0.data
         return gru_cell
 
-model = Model(rnn_dims=512, fc_dims=512, bits=bits, pad=2,
-              upsample_factors=(5, 5, 11), feat_dims=80,
-              compute_dims=128, res_out_dims=128, res_blocks=10).cuda()
-
-if not os.path.exists(MODEL_PATH):
-    torch.save(model.state_dict(), MODEL_PATH)
-model.load_state_dict(torch.load(MODEL_PATH))
-
 
 def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4) :
 
@@ -281,8 +275,7 @@ def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4)
     for p in optimiser.param_groups : p['lr'] = lr
     criterion = nn.NLLLoss().cuda()
 
-    for e in range(epochs) :
-
+    for e in range(epochs):
         trn_loader = DataLoader(dataset, collate_fn=collate, batch_size=batch_size,
                                 num_workers=2, shuffle=True, pin_memory=True)
 
@@ -312,29 +305,80 @@ def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4)
 
             step += 1
             k = step // 1000
-            display('Epoch: %i/%i -- Batch: %i/%i -- Loss: %.3f -- Speed: %.2f steps/sec -- Step: %ik ',
+            print('Epoch: %i/%i -- Batch: %i/%i -- Loss: %.3f -- Speed: %.2f steps/sec -- Step: %ik '%
                     (e + 1, epochs, i + 1, iters, avg_loss, speed, k))
 
         torch.save(model.state_dict(), MODEL_PATH)
-        np.save(STEP_PATH, step)
+        np.save(checkpoint_step_path, step)
         print(' <saved>')
 
-################################################33
-optimiser = optim.Adam(model.parameters())
-train(model, optimiser, epochs=1000, batch_size=16, classes=2**bits,
-      seq_len=seq_len, step=step, lr=1e-4)
-#########################################3
-
-def generate(samples=3) :
+def generate(step, data_root, output_path, samples=3):
     global output
     k = step // 1000
-    test_mels = [np.load(f'{DATA_PATH}mel/{dataset_id}.npy') for id in test_ids[:samples]]
-    ground_truth = [np.load(f'{DATA_PATH}quant/{dataset_id}.npy') for id in test_ids[:samples]]
+    test_mels = [np.load(f'{data_root}mel/{dataset_id}.npy') for dataset_id in test_ids[:samples]]
+    ground_truth = [np.load(f'{data_root}quant/{dataset_id}.npy') for dataset_id in test_ids[:samples]]
     for i, (gt, mel) in enumerate(zip(ground_truth, test_mels)) :
         print('\nGenerating: %i/%i' % (i+1, samples))
         gt = 2 * gt.astype(np.float32) / (2**bits - 1.) - 1.
-        librosa.output.write_wav(f'{GEN_PATH}{k}k_steps_{i}_target.wav', gt, sr=sample_rate)
-        output = model.generate(mel, f'{GEN_PATH}{k}k_steps_{i}_generated.wav')
+        librosa.output.write_wav(f'{output_path}{k}k_steps_{i}_target.wav', gt, sr=sample_rate)
+        output = model.generate(mel, f'{output_path}{k}k_steps_{i}_generated.wav')
 
-#################################
-generate()
+
+if __name__ == "__main__":
+    args = docopt(__doc__)
+    print("Command line args:\n", args)
+    checkpoint_dir = args["--checkpoint-dir"]
+    checkpoint_path = args["--checkpoint"]
+    checkpoint_restore_parts = args["--restore-parts"]
+    preset = args["--preset"]
+
+    data_root = args["--data-root"]
+    if data_root is None:
+        data_root = os.join(os.dirname(__file__), "data", "ljspeech")
+
+    log_event_path = args["--log-event-path"]
+    reset_optimizer = args["--reset-optimizer"]
+
+    # Load preset if specified
+    if preset is not None:
+        with open(preset) as f:
+            hparams.parse_json(f.read())
+    # Override hyper parameters
+    hparams.parse(args["--hparams"])
+    assert hparams.name == "WaveRNN"
+    print(hparams.debug_string())
+
+    bits = 9
+    seq_len = hop_length * 5
+
+    os.makedirs(f'{checkpoint_dir}/', exist_ok=True)
+
+    MODEL_PATH = f'{checkpoint_dir}/model.pyt'
+    data_root = f'data/'
+    checkpoint_step_path = f'{checkpoint_dir}/model_step.npy'
+    output_path = f'model_outputs/'
+    os.makedirs(output_path, exist_ok=True)
+
+    with open(f'{data_root}dataset_ids.pkl', 'rb') as f:
+        dataset_ids = pickle.load(f)
+    test_ids = dataset_ids[-50:]
+    dataset_ids = dataset_ids[:-50]
+
+    dataset = AudioDataset(dataset_ids, data_root)
+    data_loader = DataLoader(dataset, collate_fn=collate, batch_size=32,
+                             num_workers=0, shuffle=True)
+
+    model = Model(rnn_dims=512, fc_dims=512, bits=hparams.bits, pad=2,
+                  upsample_factors=(5, 5, 11), feat_dims=80,
+                  compute_dims=128, res_out_dims=128, res_blocks=10).cuda()
+
+    if not os.path.exists(MODEL_PATH):
+        torch.save(model.state_dict(), MODEL_PATH)
+    model.load_state_dict(torch.load(MODEL_PATH))
+
+    optimiser = optim.Adam(model.parameters())
+    train(model, optimiser, epochs=1000, batch_size=16, classes=2**bits,
+          seq_len=seq_len, step=step, lr=1e-4)
+
+    generate()
+

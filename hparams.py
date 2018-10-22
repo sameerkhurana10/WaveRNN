@@ -8,8 +8,7 @@ import numpy as np
 # Default hyperparameters:
 hparams = tf.contrib.training.HParams(
     name="WaveRNN",
-    bits=9,
-
+    bits=9
 )
 
 
