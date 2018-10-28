@@ -27,6 +27,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from utils.display import *
 from utils.dsp import *
+import hparams
 from hparams import hparams
 
 
@@ -37,8 +38,8 @@ class AudioDataset(Dataset):
 
     def __getitem__(self, index):
         file = self.metadata[index]
-        m = np.load(f'{self.path}mel/{file}.npy')
-        x = np.load(f'{self.path}quant/{file}.npy')
+        m = np.load(f'{self.path}/mel/{file}.npy')
+        x = np.load(f'{self.path}/quant/{file}.npy')
         return m, x
 
     def __len__(self):
@@ -315,13 +316,13 @@ def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4)
 def generate(step, data_root, output_path, samples=3):
     global output
     k = step // 1000
-    test_mels = [np.load(f'{data_root}mel/{dataset_id}.npy') for dataset_id in test_ids[:samples]]
-    ground_truth = [np.load(f'{data_root}quant/{dataset_id}.npy') for dataset_id in test_ids[:samples]]
+    test_mels = [np.load(f'{data_root}/mel/{dataset_id}.npy') for dataset_id in test_ids[:samples]]
+    ground_truth = [np.load(f'{data_root}/quant/{dataset_id}.npy') for dataset_id in test_ids[:samples]]
     for i, (gt, mel) in enumerate(zip(ground_truth, test_mels)) :
         print('\nGenerating: %i/%i' % (i+1, samples))
         gt = 2 * gt.astype(np.float32) / (2**bits - 1.) - 1.
-        librosa.output.write_wav(f'{output_path}{k}k_steps_{i}_target.wav', gt, sr=sample_rate)
-        output = model.generate(mel, f'{output_path}{k}k_steps_{i}_generated.wav')
+        librosa.output.write_wav(f'{output_path}/{k}k_steps_{i}_target.wav', gt, sr=sample_rate)
+        output = model.generate(mel, f'{output_path}/{k}k_steps_{i}_generated.wav')
 
 
 if __name__ == "__main__":
@@ -346,20 +347,21 @@ if __name__ == "__main__":
     # Override hyper parameters
     hparams.parse(args["--hparams"])
     assert hparams.name == "WaveRNN"
-    print(hparams.debug_string())
+    #print(hparams_debug_string())
 
     bits = 9
     seq_len = hop_length * 5
+    step = 0
 
     os.makedirs(f'{checkpoint_dir}/', exist_ok=True)
 
     MODEL_PATH = f'{checkpoint_dir}/model.pyt'
-    data_root = f'data/'
+    #data_root = f'data/'
     checkpoint_step_path = f'{checkpoint_dir}/model_step.npy'
     output_path = f'model_outputs/'
     os.makedirs(output_path, exist_ok=True)
 
-    with open(f'{data_root}dataset_ids.pkl', 'rb') as f:
+    with open(os.path.join(data_root, 'dataset_ids.pkl'), 'rb') as f:
         dataset_ids = pickle.load(f)
     test_ids = dataset_ids[-50:]
     dataset_ids = dataset_ids[:-50]

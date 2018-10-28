@@ -2,7 +2,7 @@
 """
 Preprocess dataset for WaveRNN
 
-usage: preprocess.py [options] <name> <in_dir> <out_dir>
+usage: preprocess.py [options] <in_dir> <out_dir>
 
 options:
     <in_dir>                 folder containing your training wavs
@@ -41,7 +41,7 @@ def convert_file(path):
 
 if __name__ == "__main__":
     args = docopt(__doc__)
-    name = args["<name>"]
+
     in_dir = args["<in_dir>"]
     out_dir = args["<out_dir>"]
     num_workers = args["--num_workers"]
@@ -70,5 +70,5 @@ if __name__ == "__main__":
         np.save(f'{mel_path}{dataset_id}.npy', m)
         np.save(f'{quant_path}{dataset_id}.npy', x)
         print('%i/%i'%(i + 1, len(wav_files)))
-    with open(out_dir + 'dataset_ids.pkl', 'wb') as f:
+    with open(os.path.join(out_dir,'dataset_ids.pkl'), 'wb') as f:
         pickle.dump(dataset_ids, f)
