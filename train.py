@@ -65,7 +65,7 @@ def collate(batch):
     mels = torch.FloatTensor(mels)
     coarse = torch.LongTensor(coarse)
 
-    x_input = 2 * coarse[:, :seq_len].float() / (2**bits - 1.) - 1.
+    x_input = 2 * coarse[:, :seq_len].float() / (2**hparams.bits - 1.) - 1.
 
     y_coarse = coarse[:, 1:]
 
