@@ -312,7 +312,8 @@ def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4)
 
         torch.save(model.state_dict(), MODEL_PATH)
         np.save(checkpoint_step_path, step)
-        generate(e, data_root, output_path, test_ids)
+        if e % 10 == 0:
+            generate(e, data_root, output_path, test_ids)
         print(' <saved>')
 
 
