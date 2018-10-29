@@ -8,6 +8,8 @@ import numpy as np
 # Default hyperparameters:
 hparams = tf.contrib.training.HParams(
     name="WaveRNN",
+    batch_size=32,
+    num_workers=8,
     bits=9
 )
 

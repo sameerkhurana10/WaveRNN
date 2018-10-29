@@ -269,16 +269,17 @@ class Model(nn.Module):
         return gru_cell
 
 
-def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4) :
+def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4):
 
     loss_threshold = 4.0
 
-    for p in optimiser.param_groups : p['lr'] = lr
+    for p in optimiser.param_groups:
+        p['lr'] = lr
     criterion = nn.NLLLoss().cuda()
 
     for e in range(epochs):
-        trn_loader = DataLoader(dataset, collate_fn=collate, batch_size=batch_size,
-                                num_workers=2, shuffle=True, pin_memory=True)
+        trn_loader = DataLoader(dataset, collate_fn=collate, batch_size=hparams.batch_size,
+                                num_workers=hparams.num_workers, shuffle=True, pin_memory=True)
 
         running_loss = 0.
         val_loss = 0.
@@ -311,18 +312,22 @@ def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4)
 
         torch.save(model.state_dict(), MODEL_PATH)
         np.save(checkpoint_step_path, step)
+        generate(e, data_root, output_path, test_ids)
         print(' <saved>')
 
-def generate(step, data_root, output_path, samples=3):
+
+def generate(epoch, data_root, output_path, test_ids, samples=3):
     global output
-    k = step // 1000
+
     test_mels = [np.load(f'{data_root}/mel/{dataset_id}.npy') for dataset_id in test_ids[:samples]]
     ground_truth = [np.load(f'{data_root}/quant/{dataset_id}.npy') for dataset_id in test_ids[:samples]]
+    os.makedirs(f'{output_path}/{epoch}', exist_ok=True)
+
     for i, (gt, mel) in enumerate(zip(ground_truth, test_mels)) :
         print('\nGenerating: %i/%i' % (i+1, samples))
-        gt = 2 * gt.astype(np.float32) / (2**bits - 1.) - 1.
-        librosa.output.write_wav(f'{output_path}/{k}k_steps_{i}_target.wav', gt, sr=sample_rate)
-        output = model.generate(mel, f'{output_path}/{k}k_steps_{i}_generated.wav')
+        gt = 2 * gt.astype(np.float32) / (2**hparams.bits - 1.) - 1.
+        librosa.output.write_wav(f'{output_path}/{epoch}/target_{i}.wav', gt, sr=sample_rate)
+        output = model.generate(mel, f'{output_path}/{epoch}/generated_{i}.wav')
 
 
 if __name__ == "__main__":
@@ -349,7 +354,6 @@ if __name__ == "__main__":
     assert hparams.name == "WaveRNN"
     #print(hparams_debug_string())
 
-    bits = 9
     seq_len = hop_length * 5
     step = 0
 
@@ -367,8 +371,8 @@ if __name__ == "__main__":
     dataset_ids = dataset_ids[:-50]
 
     dataset = AudioDataset(dataset_ids, data_root)
-    data_loader = DataLoader(dataset, collate_fn=collate, batch_size=32,
-                             num_workers=0, shuffle=True)
+    data_loader = DataLoader(dataset, collate_fn=collate, batch_size=hparams.batch_size,
+                             num_workers=hparams.num_workers, shuffle=True)
 
     model = Model(rnn_dims=512, fc_dims=512, bits=hparams.bits, pad=2,
                   upsample_factors=(5, 5, 11), feat_dims=80,
@@ -379,8 +383,8 @@ if __name__ == "__main__":
     model.load_state_dict(torch.load(MODEL_PATH))
 
     optimiser = optim.Adam(model.parameters())
-    train(model, optimiser, epochs=1000, batch_size=16, classes=2**bits,
+    train(model, optimiser, epochs=1000, batch_size=hparams.batch_size, classes=2**(hparams.bits),
           seq_len=seq_len, step=step, lr=1e-4)
 
-    generate()
+    generate(step, data_root, output_path, test_ids)
 
