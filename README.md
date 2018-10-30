@@ -17,7 +17,7 @@ Trained on LJSpeech:
 
 * Commit: https://github.com/geneing/WaveRNN/commit/fa282a4b7c8c31318b47617688fad3b8ed6856df (https://app.box.com/s/uij3u2x6rxx2m01kbzirr4cto0jclqxe)
 
-After 400 epochs, the quality is quite good.
+After 400 epochs, the quality is quite good. [Reference](https://app.box.com/s/nm9reae7x8dh5j4ot63g8njdnsegkmnd), [Generated](https://app.box.com/s/juz31710hsma6xs8z26eh4dvn53wzidc)
 
 ### Dependencies
 * Python 3
