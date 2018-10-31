@@ -10,7 +10,17 @@ hparams = tf.contrib.training.HParams(
     name="WaveRNN",
     batch_size=32,
     num_workers=8,
-    bits=9
+    bits=9,
+    rnn_dims=512,
+    fc_dims=512,
+    pad=2,
+    upsample_factors=(5, 5, 11),
+    feat_dims=80,
+    compute_dims=128,
+    res_out_dims=128,
+    res_blocks=10,
+    epochs=1000,
+    lr=1.e-4,
 )
 
 

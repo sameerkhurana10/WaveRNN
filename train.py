@@ -145,7 +145,8 @@ class UpsampleNetwork(nn.Module):
         aux = self.resnet_stretch(aux)
         aux = aux.squeeze(1)
         m = m.unsqueeze(1)
-        for f in self.up_layers : m = f(m)
+        for f in self.up_layers:
+            m = f(m)
         m = m.squeeze(1)[:, :, self.indent:-self.indent]
         return m.transpose(1, 2), aux.transpose(1, 2)
 
@@ -207,7 +208,7 @@ class Model(nn.Module):
         rnn1 = self.get_gru_cell(self.rnn1)
         rnn2 = self.get_gru_cell(self.rnn2)
 
-        with torch.no_grad() :
+        with torch.no_grad():
             start = time.time()
             x = torch.zeros(1, 1).cuda()
             h1 = torch.zeros(1, self.rnn_dims).cuda()
@@ -224,7 +225,7 @@ class Model(nn.Module):
 
             seq_len = mels.size(1)
 
-            for i in range(seq_len) :
+            for i in range(seq_len):
 
                 m_t = mels[:, i, :]
                 a1_t = a1[:, i, :]
@@ -375,17 +376,17 @@ if __name__ == "__main__":
     data_loader = DataLoader(dataset, collate_fn=collate, batch_size=hparams.batch_size,
                              num_workers=hparams.num_workers, shuffle=True)
 
-    model = Model(rnn_dims=512, fc_dims=512, bits=hparams.bits, pad=2,
-                  upsample_factors=(5, 5, 11), feat_dims=80,
-                  compute_dims=128, res_out_dims=128, res_blocks=10).cuda()
+    model = Model(rnn_dims=hparams.rnn_dims, fc_dims=hparams.fc_dims, bits=hparams.bits, pad=hparams.pad,
+                  upsample_factors=hparams.upsample_factors, feat_dims=hparams.feat_dims,
+                  compute_dims=hparams.compute_dims, res_out_dims=hparams.res_out_dims, res_blocks=hparams.res_blocks).cuda()
 
     if not os.path.exists(MODEL_PATH):
         torch.save(model.state_dict(), MODEL_PATH)
     model.load_state_dict(torch.load(MODEL_PATH))
 
     optimiser = optim.Adam(model.parameters())
-    train(model, optimiser, epochs=1000, batch_size=hparams.batch_size, classes=2**(hparams.bits),
-          seq_len=seq_len, step=step, lr=1e-4)
+    train(model, optimiser, epochs=hparams.epochs, batch_size=hparams.batch_size, classes=2**(hparams.bits),
+          seq_len=seq_len, step=step, lr=hparams.lr)
 
     generate(step, data_root, output_path, test_ids)
 
