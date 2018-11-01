@@ -1,6 +1,5 @@
 
 import tensorflow as tf
-import numpy as np
 
 # NOTE: If you want full control for model architecture. please take a look
 # at the code and change whatever you want. Some hyper parameters are hardcoded.
@@ -10,7 +9,6 @@ hparams = tf.contrib.training.HParams(
     name="WaveRNN",
     batch_size=32,
     num_workers=8,
-    bits=9,
     rnn_dims=512,
     fc_dims=512,
     pad=2,
@@ -21,6 +19,7 @@ hparams = tf.contrib.training.HParams(
     res_blocks=10,
     epochs=1000,
     lr=1.e-4,
+    bits=10
 )
 
 

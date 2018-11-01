@@ -5,6 +5,7 @@ usage: train.py [options]
 options:
     --data-root=<dir>            Directory contains preprocessed features.
     --checkpoint-dir=<dir>       Directory where to save model checkpoints [default: checkpoints].
+    --output-dir=<dir>           Output Directory [default: model_outputs]
     --hparams=<params>           Hyper parameters [default: ].
     --preset=<json>              Path of preset parameters (json).
     --checkpoint=<path>          Restore model from checkpoint path if given.
@@ -14,21 +15,20 @@ options:
     --speaker-id=<N>             Use specific speaker of data in case for multi-speaker datasets.
     -h, --help                   Show this help message and exit
 """
-from docopt import docopt
-import time
-import matplotlib.pyplot as plt
-import math, pickle, os
-import numpy as np
+import os
+import pickle
+
 import torch
-from torch.autograd import Variable
-from torch import optim
 import torch.nn as nn
 import torch.nn.functional as F
+from docopt import docopt
+from torch import optim
 from torch.utils.data import Dataset, DataLoader
-from utils.display import *
-from utils.dsp import *
+
 import hparams
 from hparams import hparams
+from utils.display import *
+from utils.dsp import *
 
 
 class AudioDataset(Dataset):
@@ -336,6 +336,7 @@ if __name__ == "__main__":
     args = docopt(__doc__)
     print("Command line args:\n", args)
     checkpoint_dir = args["--checkpoint-dir"]
+    output_path = args["--output-dir"]
     checkpoint_path = args["--checkpoint"]
     checkpoint_restore_parts = args["--restore-parts"]
     preset = args["--preset"]
@@ -364,7 +365,6 @@ if __name__ == "__main__":
     MODEL_PATH = f'{checkpoint_dir}/model.pyt'
     #data_root = f'data/'
     checkpoint_step_path = f'{checkpoint_dir}/model_step.npy'
-    output_path = f'model_outputs/'
     os.makedirs(output_path, exist_ok=True)
 
     with open(os.path.join(data_root, 'dataset_ids.pkl'), 'rb') as f:
