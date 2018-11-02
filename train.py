@@ -173,8 +173,8 @@ class Model(nn.Module):
         self.rnn2.flatten_parameters()
 
         bsize = x.size(0)
-        h1 = torch.zeros(1, bsize, self.rnn_dims).cuda()
-        h2 = torch.zeros(1, bsize, self.rnn_dims).cuda()
+        h1 = torch.zeros(1, bsize, self.rnn_dims[1]).cuda()
+        h2 = torch.zeros(1, bsize, self.rnn_dims[2]).cuda()
         mels, aux = self.upsample(mels)
 
         aux_idx = [self.aux_dims * i for i in range(5)]
