@@ -7,10 +7,10 @@ import tensorflow as tf
 # Default hyperparameters:
 hparams = tf.contrib.training.HParams(
     name="WaveRNN",
-    batch_size=32,
+    batch_size=64,
     num_workers=8,
     rnn_dims=(64, 32, 16),
-    fc_dims=(128, 64, 32),
+    fc_dims=(128, 64),
     pad=2,
     upsample_factors=(5, 5, 11),
     feat_dims=80,

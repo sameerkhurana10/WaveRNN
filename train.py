@@ -17,6 +17,7 @@ options:
 """
 import os
 import pickle
+import threading
 
 import torch
 import torch.nn as nn
@@ -29,7 +30,6 @@ import hparams
 from hparams import hparams
 from utils.display import *
 from utils.dsp import *
-
 
 class AudioDataset(Dataset):
     def __init__(self, ids, path):
@@ -161,14 +161,19 @@ class Model(nn.Module):
         self.upsample = UpsampleNetwork(feat_dims, upsample_factors, compute_dims,
                                         res_blocks, res_out_dims, pad)
         self.I = nn.Linear(feat_dims + self.aux_dims + 1, rnn_dims[0])
+
         self.rnn1 = nn.GRU(rnn_dims[0], rnn_dims[1], batch_first=True)
+        self.resresize1 = nn.Linear(rnn_dims[0], rnn_dims[1])
         self.rnn2 = nn.GRU(rnn_dims[1] + self.aux_dims, rnn_dims[2], batch_first=True)
+        self.resresize2 = nn.Linear(self.rnn_dims[1], self.rnn_dims[2])
         self.fc1 = nn.Linear(rnn_dims[2] + self.aux_dims, fc_dims[0])
-        self.fc2 = nn.Linear(fc_dims[1] + self.aux_dims, fc_dims[2])
-        self.fc3 = nn.Linear(fc_dims[2], self.n_classes)
+        self.fc2 = nn.Linear(fc_dims[0] + self.aux_dims, fc_dims[1])
+        self.fc3 = nn.Linear(fc_dims[1], self.n_classes)
         num_params(self)
 
     def forward(self, x, mels):
+        self.train()
+
         self.rnn1.flatten_parameters()
         self.rnn2.flatten_parameters()
 
@@ -185,15 +190,16 @@ class Model(nn.Module):
 
         x = torch.cat([x.unsqueeze(-1), mels, a1], dim=2)
         x = self.I(x)
-        res = x
-        x, _ = self.rnn1(x, h1)
+        res = self.resresize1(x)
 
+        x, _ = self.rnn1(x, h1)
         x = x + res
-        res = x
+
+        res = self.resresize2(x)
         x = torch.cat([x, a2], dim=2)
         x, _ = self.rnn2(x, h2)
-
         x = x + res
+
         x = torch.cat([x, a3], dim=2)
         x = F.relu(self.fc1(x))
 
@@ -214,8 +220,8 @@ class Model(nn.Module):
         with torch.no_grad():
             start = time.time()
             x = torch.zeros(1, 1).cuda()
-            h1 = torch.zeros(1, self.rnn_dims).cuda()
-            h2 = torch.zeros(1, self.rnn_dims).cuda()
+            h1 = torch.zeros(1, self.rnn_dims[1]).cuda()
+            h2 = torch.zeros(1, self.rnn_dims[2]).cuda()
 
             mels = torch.FloatTensor(mels).cuda().unsqueeze(0)
             mels, aux = self.upsample(mels)
@@ -240,11 +246,11 @@ class Model(nn.Module):
                 x = self.I(x)
                 h1 = rnn1(x, h1)
 
-                x = x + h1
+                x = self.resresize1(x) + h1
                 inp = torch.cat([x, a2_t], dim=1)
                 h2 = rnn2(inp, h2)
 
-                x = x + h2
+                x = self.resresize2(x) + h2
                 x = torch.cat([x, a3_t], dim=1)
                 x = F.relu(self.fc1(x))
 
@@ -256,12 +262,13 @@ class Model(nn.Module):
                 sample = 2 * distrib.sample().float() / (self.n_classes - 1.) - 1.
                 output.append(sample)
                 x = torch.FloatTensor([[sample]]).cuda()
-                if i % 100 == 0 :
-                    speed = int((i + 1) / (time.time() - start))
-                    print('%i/%i -- Speed: %i samples/sec'%(i + 1, seq_len, speed))
+
+        speed = int((seq_len + 1) / (time.time() - start))
+        print('%s Speed: %i samples/sec'%(save_path, speed))
         output = torch.stack(output).cpu().numpy()
         librosa.output.write_wav(save_path, output, sample_rate)
-        self.train()
+
+
         return output
 
     def get_gru_cell(self, gru) :
@@ -294,10 +301,8 @@ def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4)
 
         with torch.autograd.profiler.profile(enabled=False, use_cuda=True) as prof:
         #with torch.autograd.profiler.emit_nvtx(enabled=False):
-            for i, (x, m, y) in enumerate(trn_loader) :
-
+            for i, (x, m, y) in enumerate(trn_loader):
                 x, m, y = x.cuda(), m.cuda(), y.cuda()
-
                 #y_hat = model(x, m)
                 y_hat = torch.nn.parallel.data_parallel(model, (x, m))
                 y_hat = y_hat.transpose(1, 2).unsqueeze(-1)
@@ -317,32 +322,42 @@ def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4)
                 k = step // 1000
                 print('Epoch: %i/%i -- Batch: %i/%i -- Loss: %.3f -- Speed: %.2f steps/sec -- Step: %ik '%
                         (e + 1, epochs, i + 1, iters, avg_loss, speed, k))
+
         #print(prof.table(sort_by='cuda_time'))
         #prof.export_chrome_trace(f'{output_path}/chrome_trace')
 
         torch.save(model.state_dict(), MODEL_PATH)
         np.save(checkpoint_step_path, step)
-        if e % 10 == 0:
+        if e % 100 == 0:
             generate(e, data_root, output_path, test_ids)
         print(' <saved>')
 
 
-def generate(epoch, data_root, output_path, test_ids, samples=3):
 
-    global output
+def generateOne( gt, mel, epoch, output_path, i ):
+    gt = 2 * gt.astype(np.float32) / (2**hparams.bits - 1.) - 1.
+    librosa.output.write_wav(f'{output_path}/{epoch}/target_{i}.wav', gt, sr=sample_rate)
+    model.generate(mel, f'{output_path}/{epoch}/generated_{i}.wav')
+
+
+def generate(epoch, data_root, output_path, test_ids, samples=3):
 
     test_mels = [np.load(f'{data_root}/mel/{dataset_id}.npy') for dataset_id in test_ids[:samples]]
     ground_truth = [np.load(f'{data_root}/quant/{dataset_id}.npy') for dataset_id in test_ids[:samples]]
     os.makedirs(f'{output_path}/{epoch}', exist_ok=True)
+    threads=[]
+    #this code is in preparation for multiprocessing
+    for v in zip(ground_truth, test_mels, [epoch]*len(ground_truth), [output_path]*len(ground_truth), range(len(ground_truth))):
+        t=threading.Thread(target=generateOne, args=v)
+        threads.append(t)
+        t.start()
+    for t in threads:
+        t.join()
 
-    for i, (gt, mel) in enumerate(zip(ground_truth, test_mels)) :
-        print('\nGenerating: %i/%i' % (i+1, samples))
-        gt = 2 * gt.astype(np.float32) / (2**hparams.bits - 1.) - 1.
-        librosa.output.write_wav(f'{output_path}/{epoch}/target_{i}.wav', gt, sr=sample_rate)
-        output = model.generate(mel, f'{output_path}/{epoch}/generated_{i}.wav')
 
 
 if __name__ == "__main__":
+
     args = docopt(__doc__)
     print("Command line args:\n", args)
     checkpoint_dir = args["--checkpoint-dir"]
@@ -389,6 +404,7 @@ if __name__ == "__main__":
     model = Model(rnn_dims=hparams.rnn_dims, fc_dims=hparams.fc_dims, bits=hparams.bits, pad=hparams.pad,
                   upsample_factors=hparams.upsample_factors, feat_dims=hparams.feat_dims,
                   compute_dims=hparams.compute_dims, res_out_dims=hparams.res_out_dims, res_blocks=hparams.res_blocks).cuda()
+    model.share_memory()
 
     if not os.path.exists(MODEL_PATH):
         torch.save(model.state_dict(), MODEL_PATH)
