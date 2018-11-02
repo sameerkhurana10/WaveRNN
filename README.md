@@ -19,6 +19,7 @@ Trained on LJSpeech:
 
 After 400 epochs, the quality is quite good. [Reference](https://app.box.com/s/nm9reae7x8dh5j4ot63g8njdnsegkmnd), [Generated](https://app.box.com/s/juz31710hsma6xs8z26eh4dvn53wzidc)
 
+After 700 epochs, 10bit encoding. Sound quality is even better than 9bit. [Folder](https://app.box.com/s/wy5wai8tutjir07e66xps0a38mxbdqmy)
 ### Dependencies
 * Python 3
 * Pytorch v0.5
