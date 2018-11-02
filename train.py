@@ -160,15 +160,18 @@ class Model(nn.Module):
         self.aux_dims = res_out_dims // 4
         self.upsample = UpsampleNetwork(feat_dims, upsample_factors, compute_dims,
                                         res_blocks, res_out_dims, pad)
-        self.I = nn.Linear(feat_dims + self.aux_dims + 1, rnn_dims)
-        self.rnn1 = nn.GRU(rnn_dims, rnn_dims, batch_first=True)
-        self.rnn2 = nn.GRU(rnn_dims + self.aux_dims, rnn_dims, batch_first=True)
-        self.fc1 = nn.Linear(rnn_dims + self.aux_dims, fc_dims)
-        self.fc2 = nn.Linear(fc_dims + self.aux_dims, fc_dims)
-        self.fc3 = nn.Linear(fc_dims, self.n_classes)
+        self.I = nn.Linear(feat_dims + self.aux_dims + 1, rnn_dims[0])
+        self.rnn1 = nn.GRU(rnn_dims[0], rnn_dims[1], batch_first=True)
+        self.rnn2 = nn.GRU(rnn_dims[1] + self.aux_dims, rnn_dims[2], batch_first=True)
+        self.fc1 = nn.Linear(rnn_dims[2] + self.aux_dims, fc_dims[0])
+        self.fc2 = nn.Linear(fc_dims[1] + self.aux_dims, fc_dims[2])
+        self.fc3 = nn.Linear(fc_dims[2], self.n_classes)
         num_params(self)
 
-    def forward(self, x, mels) :
+    def forward(self, x, mels):
+        self.rnn1.flatten_parameters()
+        self.rnn2.flatten_parameters()
+
         bsize = x.size(0)
         h1 = torch.zeros(1, bsize, self.rnn_dims).cuda()
         h2 = torch.zeros(1, bsize, self.rnn_dims).cuda()
@@ -289,27 +292,33 @@ def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4)
 
         iters = len(trn_loader)
 
-        for i, (x, m, y) in enumerate(trn_loader) :
+        with torch.autograd.profiler.profile(enabled=False, use_cuda=True) as prof:
+        #with torch.autograd.profiler.emit_nvtx(enabled=False):
+            for i, (x, m, y) in enumerate(trn_loader) :
 
-            x, m, y = x.cuda(), m.cuda(), y.cuda()
+                x, m, y = x.cuda(), m.cuda(), y.cuda()
 
-            y_hat = model(x, m)
-            y_hat = y_hat.transpose(1, 2).unsqueeze(-1)
-            y = y.unsqueeze(-1)
-            loss = criterion(y_hat, y)
+                #y_hat = model(x, m)
+                y_hat = torch.nn.parallel.data_parallel(model, (x, m))
+                y_hat = y_hat.transpose(1, 2).unsqueeze(-1)
+                y = y.unsqueeze(-1)
+                loss = criterion(y_hat, y)
 
-            optimiser.zero_grad()
-            loss.backward()
-            optimiser.step()
-            running_loss += loss.item()
+                optimiser.zero_grad()
+                loss.backward()
+                optimiser.step()
+                running_loss += loss.item()
 
-            speed = (i + 1) / (time.time() - start)
-            avg_loss = running_loss / (i + 1)
+                speed = (i + 1) / (time.time() - start)
+                avg_loss = running_loss / (i + 1)
 
-            step += 1
-            k = step // 1000
-            print('Epoch: %i/%i -- Batch: %i/%i -- Loss: %.3f -- Speed: %.2f steps/sec -- Step: %ik '%
-                    (e + 1, epochs, i + 1, iters, avg_loss, speed, k))
+                step += 1
+
+                k = step // 1000
+                print('Epoch: %i/%i -- Batch: %i/%i -- Loss: %.3f -- Speed: %.2f steps/sec -- Step: %ik '%
+                        (e + 1, epochs, i + 1, iters, avg_loss, speed, k))
+        #print(prof.table(sort_by='cuda_time'))
+        #prof.export_chrome_trace(f'{output_path}/chrome_trace')
 
         torch.save(model.state_dict(), MODEL_PATH)
         np.save(checkpoint_step_path, step)
@@ -319,6 +328,7 @@ def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4)
 
 
 def generate(epoch, data_root, output_path, test_ids, samples=3):
+
     global output
 
     test_mels = [np.load(f'{data_root}/mel/{dataset_id}.npy') for dataset_id in test_ids[:samples]]
@@ -382,7 +392,9 @@ if __name__ == "__main__":
 
     if not os.path.exists(MODEL_PATH):
         torch.save(model.state_dict(), MODEL_PATH)
-    model.load_state_dict(torch.load(MODEL_PATH))
+    else:
+        print("\t\t Loading saved state")
+        model.load_state_dict(torch.load(MODEL_PATH))
 
     optimiser = optim.Adam(model.parameters())
     train(model, optimiser, epochs=hparams.epochs, batch_size=hparams.batch_size, classes=2**(hparams.bits),
