@@ -12,16 +12,9 @@ options:
     -h, --help               Show help message.
 """
 from docopt import docopt
-import os
 from multiprocessing import cpu_count
-from tqdm import tqdm
-import importlib
 from hparams import hparams
-
-import matplotlib.pyplot as plt
-import math, pickle, os, glob
-import numpy as np
-from utils import *
+import pickle, os, glob
 from utils.dsp import *
 
 

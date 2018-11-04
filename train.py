@@ -160,12 +160,12 @@ class Model(nn.Module):
         self.aux_dims = res_out_dims // 4
         self.upsample = UpsampleNetwork(feat_dims, upsample_factors, compute_dims,
                                         res_blocks, res_out_dims, pad)
-        self.I = nn.Linear(feat_dims + self.aux_dims + 1, rnn_dims[0])
-        self.rnn1 = nn.GRU(rnn_dims[0], rnn_dims[1], batch_first=True)
-        self.rnn2 = nn.GRU(rnn_dims[1] + self.aux_dims, rnn_dims[2], batch_first=True)
-        self.fc1 = nn.Linear(rnn_dims[2] + self.aux_dims, fc_dims[0])
-        self.fc2 = nn.Linear(fc_dims[1] + self.aux_dims, fc_dims[2])
-        self.fc3 = nn.Linear(fc_dims[2], self.n_classes)
+        self.I = nn.Linear(feat_dims + self.aux_dims + 1, rnn_dims)
+        self.rnn1 = nn.GRU(rnn_dims, rnn_dims, batch_first=True)
+        self.rnn2 = nn.GRU(rnn_dims + self.aux_dims, rnn_dims, batch_first=True)
+        self.fc1 = nn.Linear(rnn_dims + self.aux_dims, fc_dims)
+        self.fc2 = nn.Linear(fc_dims + self.aux_dims, fc_dims)
+        self.fc3 = nn.Linear(fc_dims, self.n_classes)
         num_params(self)
 
     def forward(self, x, mels):
@@ -173,8 +173,8 @@ class Model(nn.Module):
         self.rnn2.flatten_parameters()
 
         bsize = x.size(0)
-        h1 = torch.zeros(1, bsize, self.rnn_dims[1]).cuda()
-        h2 = torch.zeros(1, bsize, self.rnn_dims[2]).cuda()
+        h1 = torch.zeros(1, bsize, self.rnn_dims).cuda()
+        h2 = torch.zeros(1, bsize, self.rnn_dims).cuda()
         mels, aux = self.upsample(mels)
 
         aux_idx = [self.aux_dims * i for i in range(5)]
