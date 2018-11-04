@@ -17,6 +17,8 @@ options:
 """
 import os
 import pickle
+import time
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -27,8 +29,8 @@ from torch.utils.data import Dataset, DataLoader
 
 import hparams
 from hparams import hparams
-from utils.display import *
-from utils.dsp import *
+import utils.display as display
+from utils.dsp import DSP
 
 
 class AudioDataset(Dataset):
@@ -48,10 +50,10 @@ class AudioDataset(Dataset):
 
 def collate(batch):
     pad = 2
-    mel_win = seq_len // hop_length + 2 * pad
+    mel_win = seq_len // hparams.hop_length + 2 * pad
     max_offsets = [x[0].shape[-1] - (mel_win + 2 * pad) for x in batch]
     mel_offsets = [np.random.randint(0, offset) for offset in max_offsets]
-    sig_offsets = [(offset + pad) * hop_length for offset in mel_offsets]
+    sig_offsets = [(offset + pad) * hparams.hop_length for offset in mel_offsets]
 
     mels = [x[0][:, mel_offsets[i]:mel_offsets[i] + mel_win] \
             for i, x in enumerate(batch)]
@@ -166,7 +168,7 @@ class Model(nn.Module):
         self.fc1 = nn.Linear(rnn_dims + self.aux_dims, fc_dims)
         self.fc2 = nn.Linear(fc_dims + self.aux_dims, fc_dims)
         self.fc3 = nn.Linear(fc_dims, self.n_classes)
-        num_params(self)
+        display.num_params(self)
 
     def forward(self, x, mels):
         self.rnn1.flatten_parameters()
@@ -205,11 +207,17 @@ class Model(nn.Module):
         mels, aux = self.upsample(mels)
         return mels, aux
 
-    def generate(self, mels, save_path) :
+    def _batch_mels(self, mel):
+        n_hops = mel.size
+        return mel
+
+    def generate(self, mel, save_path) :
         self.eval()
         output = []
         rnn1 = self.get_gru_cell(self.rnn1)
         rnn2 = self.get_gru_cell(self.rnn2)
+
+        mels = self._batch_mels(mel)
 
         with torch.no_grad():
             start = time.time()
@@ -260,7 +268,7 @@ class Model(nn.Module):
                     speed = int((i + 1) / (time.time() - start))
                     print('%i/%i -- Speed: %i samples/sec'%(i + 1, seq_len, speed))
         output = torch.stack(output).cpu().numpy()
-        librosa.output.write_wav(save_path, output, sample_rate)
+        dsp.save_wav(output, save_path)
         self.train()
         return output
 
@@ -274,8 +282,6 @@ class Model(nn.Module):
 
 
 def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4):
-
-    loss_threshold = 4.0
 
     for p in optimiser.param_groups:
         p['lr'] = lr
@@ -317,6 +323,8 @@ def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4)
                 k = step // 1000
                 print('Epoch: %i/%i -- Batch: %i/%i -- Loss: %.3f -- Speed: %.2f steps/sec -- Step: %ik '%
                         (e + 1, epochs, i + 1, iters, avg_loss, speed, k))
+
+                break   #TODO: remove
         #print(prof.table(sort_by='cuda_time'))
         #prof.export_chrome_trace(f'{output_path}/chrome_trace')
 
@@ -328,18 +336,15 @@ def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4)
 
 
 def generate(epoch, data_root, output_path, test_ids, samples=3):
-
-    global output
-
     test_mels = [np.load(f'{data_root}/mel/{dataset_id}.npy') for dataset_id in test_ids[:samples]]
     ground_truth = [np.load(f'{data_root}/quant/{dataset_id}.npy') for dataset_id in test_ids[:samples]]
     os.makedirs(f'{output_path}/{epoch}', exist_ok=True)
 
-    for i, (gt, mel) in enumerate(zip(ground_truth, test_mels)) :
+    for i, (gt, mel) in enumerate(zip(ground_truth, test_mels)):
         print('\nGenerating: %i/%i' % (i+1, samples))
         gt = 2 * gt.astype(np.float32) / (2**hparams.bits - 1.) - 1.
-        librosa.output.write_wav(f'{output_path}/{epoch}/target_{i}.wav', gt, sr=sample_rate)
-        output = model.generate(mel, f'{output_path}/{epoch}/generated_{i}.wav')
+        dsp.save_wav(gt, f'{output_path}/{epoch}/target_{i}.wav')
+        model.generate(mel, f'{output_path}/{epoch}/generated_{i}.wav')
 
 
 if __name__ == "__main__":
@@ -367,7 +372,8 @@ if __name__ == "__main__":
     assert hparams.name == "WaveRNN"
     #print(hparams_debug_string())
 
-    seq_len = hop_length * 5
+    dsp = DSP(hparams)
+    seq_len = dsp.hop_length * 5
     step = 0
 
     os.makedirs(f'{checkpoint_dir}/', exist_ok=True)
@@ -397,7 +403,7 @@ if __name__ == "__main__":
         model.load_state_dict(torch.load(MODEL_PATH))
 
     optimiser = optim.Adam(model.parameters())
-    train(model, optimiser, epochs=hparams.epochs, batch_size=hparams.batch_size, classes=2**(hparams.bits),
+    train(model, optimiser, epochs=hparams.epochs, batch_size=hparams.batch_size, classes=2**hparams.bits,
           seq_len=seq_len, step=step, lr=hparams.lr)
 
     generate(step, data_root, output_path, test_ids)

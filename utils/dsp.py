@@ -1,70 +1,77 @@
 import numpy as np
-import librosa, math
+import librosa
 
-sample_rate = 22050
-n_fft = 2048
-fft_bins = n_fft // 2 + 1
-num_mels = 80
-hop_length = int(sample_rate * 0.0125) # 12.5ms
-win_length = int(sample_rate * 0.05)   # 50ms
-fmin = 40
-min_level_db = -100
-ref_level_db = 20
 
-def load_wav(filename, encode=True) :
-    x = librosa.load(filename, sr=sample_rate)[0]
-    if encode == True : x = encode_16bits(x)
-    return x
+class DSP(object):
+    def __init__(self, hparams):
+        self.sample_rate = hparams.sample_rate
+        self.n_fft = hparams.n_fft
+        self.fft_bins = self.n_fft // 2 + 1
+        self.num_mels = hparams.num_mels
+        self.hop_length = int(self.sample_rate * hparams.hop_period)
+        self.win_length = int(self.sample_rate * hparams.win_period)
+        self.fmin = hparams.fmin
+        self.min_level_db = hparams.min_level_db
+        self.ref_level_db = hparams.ref_level_db
+        self.mel_basis = None
 
-def save_wav(y, filename) :
-    if y.dtype != 'int16' :
-        y = encode_16bits(y)
-    librosa.output.write_wav(filename, y.astype(np.int16), sample_rate)
+    def load_wav(self, filename, encode=True) :
+        x = librosa.load(filename, sr=self.sample_rate)[0]
+        if encode:
+            x = self.encode_16bits(x)
+        return x
 
-def split_signal(x) :
-    unsigned = x + 2**15
-    coarse = unsigned // 256
-    fine = unsigned % 256
-    return coarse, fine
+    def save_wav(self, y, filename):
+        if y.dtype != 'int16' :
+            y = self.encode_16bits(y)
+        librosa.output.write_wav(filename, y.astype(np.int16), self.sample_rate)
 
-def combine_signal(coarse, fine) :
-    return coarse * 256 + fine - 2**15
+    @staticmethod
+    def split_signal(x):
+        unsigned = x + 2**15
+        coarse = unsigned // 256
+        fine = unsigned % 256
+        return coarse, fine
 
-def encode_16bits(x) :
-    return np.clip(x * 2**15, -2**15, 2**15 - 1).astype(np.int16)
+    @staticmethod
+    def combine_signal(coarse, fine):
+        return coarse * 256 + fine - 2**15
 
-mel_basis = None
+    @staticmethod
+    def encode_16bits(x):
+        return np.clip(x * 2**15, -2**15, 2**15 - 1).astype(np.int16)
 
-def linear_to_mel(spectrogram):
-    global mel_basis
-    if mel_basis is None:
-        mel_basis = build_mel_basis()
-    return np.dot(mel_basis, spectrogram)
+    def linear_to_mel(self, spectrogram):
+        if self.mel_basis is None:
+            self.mel_basis = self.build_mel_basis()
+        return np.dot(self.mel_basis, spectrogram)
 
-def build_mel_basis():
-    return librosa.filters.mel(sample_rate, n_fft, n_mels=num_mels, fmin=fmin)
+    def build_mel_basis(self):
+        return librosa.filters.mel(self.sample_rate, self.n_fft, n_mels=self.num_mels, fmin=self.fmin)
 
-def normalize(S):
-    return np.clip((S - min_level_db) / -min_level_db, 0, 1)
+    def normalize(self, S):
+        return np.clip((S - self.min_level_db) / -self.min_level_db, 0, 1)
 
-def denormalize(S):
-    return (np.clip(S, 0, 1) * -min_level_db) + min_level_db
+    def denormalize(self, S):
+        return (np.clip(S, 0, 1) * -self.min_level_db) + self.min_level_db
 
-def amp_to_db(x):
-    return 20 * np.log10(np.maximum(1e-5, x))
+    @staticmethod
+    def amp_to_db(x):
+        return 20 * np.log10(np.maximum(1e-5, x))
 
-def db_to_amp(x):
-    return np.power(10.0, x * 0.05)
+    @staticmethod
+    def db_to_amp(x):
+        return np.power(10.0, x * 0.05)
 
-def spectrogram(y):
-    D = stft(y)
-    S = amp_to_db(np.abs(D)) - ref_level_db
-    return normalize(S)
+    def spectrogram(self, y):
+        D = self.stft(y)
+        S = self.amp_to_db(np.abs(D)) - self.ref_level_db
+        return self.normalize(S)
 
-def melspectrogram(y):
-    D = stft(y)
-    S = amp_to_db(linear_to_mel(np.abs(D)))
-    return normalize(S)
+    def melspectrogram(self, y):
+        D = self.stft(y)
+        S = self.amp_to_db(self.linear_to_mel(np.abs(D)))
+        return self.normalize(S)
 
-def stft(y):
-    return librosa.stft(y=y, n_fft=n_fft, hop_length=hop_length, win_length=win_length)
+    def stft(self, y):
+        return librosa.stft(y=y, n_fft=self.n_fft, hop_length=self.hop_length, win_length=self.win_length)

@@ -9,8 +9,8 @@ hparams = tf.contrib.training.HParams(
     name="WaveRNN",
     batch_size=32,
     num_workers=8,
-    rnn_dims=512,
-    fc_dims=512,
+    rnn_dims= 64,  # TODO: 512,
+    fc_dims=64,  # TODO: 512,
     pad=2,
     upsample_factors=(5, 5, 11),
     feat_dims=80,
@@ -19,6 +19,14 @@ hparams = tf.contrib.training.HParams(
     res_blocks=10,
     epochs=1000,
     lr=1.e-4,
+    sample_rate=22050,
+    n_fft=2048,
+    num_mels=80,
+    hop_period= 0.0125,  # 12.5ms
+    win_period=0.05,  # 50ms
+    fmin=40,
+    min_level_db=-100,
+    ref_level_db=20,
     bits=10
 )
 
