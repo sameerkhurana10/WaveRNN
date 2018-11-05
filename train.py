@@ -344,13 +344,12 @@ def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4)
                 print('Epoch: %i/%i -- Batch: %i/%i -- Loss: %.3f -- Speed: %.2f steps/sec -- Step: %ik '%
                         (e + 1, epochs, i + 1, iters, avg_loss, speed, k))
 
-                break   #TODO: remove
         #print(prof.table(sort_by='cuda_time'))
         #prof.export_chrome_trace(f'{output_path}/chrome_trace')
 
         torch.save(model.state_dict(), MODEL_PATH)
         np.save(checkpoint_step_path, step)
-        if e % 10 == 0:
+        if e % 50 == 0:
             generate(e, data_root, output_path, test_ids)
         print(' <saved>')
 
