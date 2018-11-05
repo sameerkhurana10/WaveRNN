@@ -13,6 +13,7 @@ options:
     --log-event-path=<name>      Log event path.
     --reset-optimizer            Reset optimizer.
     --speaker-id=<N>             Use specific speaker of data in case for multi-speaker datasets.
+    --no-cuda                    Don't run on GPU
     -h, --help                   Show this help message and exit
 """
 import os
@@ -50,10 +51,10 @@ class AudioDataset(Dataset):
 
 def collate(batch):
     pad = 2
-    mel_win = seq_len // hparams.hop_length + 2 * pad
+    mel_win = seq_len // dsp.hop_length + 2 * pad
     max_offsets = [x[0].shape[-1] - (mel_win + 2 * pad) for x in batch]
     mel_offsets = [np.random.randint(0, offset) for offset in max_offsets]
-    sig_offsets = [(offset + pad) * hparams.hop_length for offset in mel_offsets]
+    sig_offsets = [(offset + pad) * dsp.hop_length for offset in mel_offsets]
 
     mels = [x[0][:, mel_offsets[i]:mel_offsets[i] + mel_win] \
             for i, x in enumerate(batch)]
@@ -175,8 +176,8 @@ class Model(nn.Module):
         self.rnn2.flatten_parameters()
 
         bsize = x.size(0)
-        h1 = torch.zeros(1, bsize, self.rnn_dims).cuda()
-        h2 = torch.zeros(1, bsize, self.rnn_dims).cuda()
+        h1 = torch.zeros(1, bsize, self.rnn_dims).to(device)
+        h2 = torch.zeros(1, bsize, self.rnn_dims).to(device)
         mels, aux = self.upsample(mels)
 
         aux_idx = [self.aux_dims * i for i in range(5)]
@@ -207,25 +208,39 @@ class Model(nn.Module):
         mels, aux = self.upsample(mels)
         return mels, aux
 
-    def _batch_mels(self, mel):
-        n_hops = mel.size
-        return mel
+    @staticmethod
+    def _round_up(num, divisor):
+        return num + divisor - (num%divisor)
 
-    def generate(self, mel, save_path) :
+    def _batch_mels(self, mel):
+        n_hops = mel.shape[1]
+        n_pad = self._round_up(n_hops, hparams.batch_size_gen) - n_hops
+        mel_padded = np.pad(mel, [(0, 0), (0, n_pad)], 'constant', constant_values=0)
+        mel_batched = mel_padded.reshape([mel.shape[0], hparams.batch_size_gen, -1]).swapaxes(0, 1)
+        pad_length = n_pad*dsp.hop_length      # ToDo: remove dependency on dsp
+        return mel_batched, pad_length
+
+    @staticmethod
+    def _unbatch_sound(x, pad_length):
+        y = x.flatten()[:-pad_length]
+        return y
+
+    def generate(self, mel, save_path):
         self.eval()
+        mels, pad_length = self._batch_mels(mel)
+
+        bsize = mels.shape[0]
         output = []
         rnn1 = self.get_gru_cell(self.rnn1)
         rnn2 = self.get_gru_cell(self.rnn2)
 
-        mels = self._batch_mels(mel)
-
         with torch.no_grad():
             start = time.time()
-            x = torch.zeros(1, 1).cuda()
-            h1 = torch.zeros(1, self.rnn_dims).cuda()
-            h2 = torch.zeros(1, self.rnn_dims).cuda()
+            x = torch.zeros(bsize, 1).to(device)
+            h1 = torch.zeros(bsize, self.rnn_dims).to(device)
+            h2 = torch.zeros(bsize, self.rnn_dims).to(device)
 
-            mels = torch.FloatTensor(mels).cuda().unsqueeze(0)
+            mels = torch.FloatTensor(mels).to(device)
             mels, aux = self.upsample(mels)
 
             aux_idx = [self.aux_dims * i for i in range(5)]
@@ -259,16 +274,18 @@ class Model(nn.Module):
                 x = torch.cat([x, a4_t], dim=1)
                 x = F.relu(self.fc2(x))
                 x = self.fc3(x)
-                posterior = F.softmax(x, dim=1).view(-1)
+                posterior = F.softmax(x, dim=1)
                 distrib = torch.distributions.Categorical(posterior)
                 sample = 2 * distrib.sample().float() / (self.n_classes - 1.) - 1.
                 output.append(sample)
-                x = torch.FloatTensor([[sample]]).cuda()
+                x = sample.unsqueeze(-1).to(device)
                 if i % 100 == 0 :
                     speed = int((i + 1) / (time.time() - start))
                     print('%i/%i -- Speed: %i samples/sec'%(i + 1, seq_len, speed))
         output = torch.stack(output).cpu().numpy()
-        dsp.save_wav(output, save_path)
+        output = self._unbatch_sound(output, pad_length)
+        if save_path:
+            dsp.save_wav(output, save_path)
         self.train()
         return output
 
@@ -285,11 +302,11 @@ def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4)
 
     for p in optimiser.param_groups:
         p['lr'] = lr
-    criterion = nn.NLLLoss().cuda()
+    criterion = nn.NLLLoss().to(device)
 
     for e in range(epochs):
         trn_loader = DataLoader(dataset, collate_fn=collate, batch_size=hparams.batch_size,
-                                num_workers=hparams.num_workers, shuffle=True, pin_memory=True)
+                                num_workers=hparams.num_workers, shuffle=True, pin_memory=(not no_cuda))
 
         running_loss = 0.
         val_loss = 0.
@@ -302,10 +319,13 @@ def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4)
         #with torch.autograd.profiler.emit_nvtx(enabled=False):
             for i, (x, m, y) in enumerate(trn_loader) :
 
-                x, m, y = x.cuda(), m.cuda(), y.cuda()
+                x, m, y = x.to(device), m.to(device), y.to(device)
 
-                #y_hat = model(x, m)
-                y_hat = torch.nn.parallel.data_parallel(model, (x, m))
+                if no_cuda:
+                    y_hat = model(x, m)
+                else:
+                    y_hat = torch.nn.parallel.data_parallel(model, (x, m))
+
                 y_hat = y_hat.transpose(1, 2).unsqueeze(-1)
                 y = y.unsqueeze(-1)
                 loss = criterion(y_hat, y)
@@ -362,6 +382,9 @@ if __name__ == "__main__":
 
     log_event_path = args["--log-event-path"]
     reset_optimizer = args["--reset-optimizer"]
+    no_cuda = args["--no-cuda"]
+
+    device = torch.device("cpu" if no_cuda else "cuda")
 
     # Load preset if specified
     if preset is not None:
@@ -394,7 +417,7 @@ if __name__ == "__main__":
 
     model = Model(rnn_dims=hparams.rnn_dims, fc_dims=hparams.fc_dims, bits=hparams.bits, pad=hparams.pad,
                   upsample_factors=hparams.upsample_factors, feat_dims=hparams.feat_dims,
-                  compute_dims=hparams.compute_dims, res_out_dims=hparams.res_out_dims, res_blocks=hparams.res_blocks).cuda()
+                  compute_dims=hparams.compute_dims, res_out_dims=hparams.res_out_dims, res_blocks=hparams.res_blocks).to(device)
 
     if not os.path.exists(MODEL_PATH):
         torch.save(model.state_dict(), MODEL_PATH)

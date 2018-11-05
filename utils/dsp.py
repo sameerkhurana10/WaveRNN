@@ -22,9 +22,7 @@ class DSP(object):
         return x
 
     def save_wav(self, y, filename):
-        if y.dtype != 'int16' :
-            y = self.encode_16bits(y)
-        librosa.output.write_wav(filename, y.astype(np.int16), self.sample_rate)
+        librosa.output.write_wav(filename, y.astype(np.float), self.sample_rate)
 
     @staticmethod
     def split_signal(x):
