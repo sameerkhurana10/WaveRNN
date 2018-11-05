@@ -7,7 +7,7 @@ import tensorflow as tf
 # Default hyperparameters:
 hparams = tf.contrib.training.HParams(
     name="WaveRNN",
-    batch_size=32,
+    batch_size=64,
     batch_size_gen=64,
     num_workers=8,
     rnn_dims=512,
