@@ -28,7 +28,7 @@ import hparams
 from hparams import hparams
 import utils.display as display
 from utils.dsp import DSP
-
+from models import *
 
 
 
@@ -51,41 +51,22 @@ if __name__ == "__main__":
     hparams.parse(args["--hparams"])
     assert hparams.name == "WaveRNN"
 
-    file_name = args['<mel_input.npy>']
+    mel_file_name = args['<mel_input.npy>']
 
     dsp = DSP(hparams)
-    seq_len = dsp.hop_length * 5
-    step = 0
 
-    os.makedirs(f'{checkpoint_dir}/', exist_ok=True)
-
-    MODEL_PATH = f'{checkpoint_dir}/model.pyt'
-    #data_root = f'data/'
+    model_path = f'{checkpoint_dir}/model.pyt'
     checkpoint_step_path = f'{checkpoint_dir}/model_step.npy'
     os.makedirs(output_path, exist_ok=True)
 
-    with open(os.path.join(data_root, 'dataset_ids.pkl'), 'rb') as f:
-        dataset_ids = pickle.load(f)
-    test_ids = dataset_ids[-50:]
-    dataset_ids = dataset_ids[:-50]
-
-    dataset = AudioDataset(dataset_ids, data_root)
-    data_loader = DataLoader(dataset, collate_fn=collate, batch_size=hparams.batch_size,
-                             num_workers=hparams.num_workers, shuffle=True)
-
-    model = Model(rnn_dims=hparams.rnn_dims, fc_dims=hparams.fc_dims, bits=hparams.bits, pad=hparams.pad,
+    model = Model(device=device, rnn_dims=hparams.rnn_dims, fc_dims=hparams.fc_dims, bits=hparams.bits, pad=hparams.pad,
                   upsample_factors=hparams.upsample_factors, feat_dims=hparams.feat_dims,
                   compute_dims=hparams.compute_dims, res_out_dims=hparams.res_out_dims, res_blocks=hparams.res_blocks).to(device)
 
-    if not os.path.exists(MODEL_PATH):
-        torch.save(model.state_dict(), MODEL_PATH)
-    else:
-        print("\t\t Loading saved state")
-        model.load_state_dict(torch.load(MODEL_PATH))
+    model.load_state_dict(torch.load(model_path))
 
-    optimiser = optim.Adam(model.parameters())
-    train(model, optimiser, epochs=hparams.epochs, batch_size=hparams.batch_size, classes=2**hparams.bits,
-          seq_len=seq_len, step=step, lr=hparams.lr)
+    mel = np.load(mel_file_name)
+    output = model.generate(mel)
+    dsp.save_wav(output, os.path.join(output_path, mel_file_name+'.wav'))
 
-    generate(step, data_root, output_path, test_ids)
 

@@ -159,10 +159,10 @@ class Model(nn.Module):
 
     @staticmethod
     def _unbatch_sound(x, pad_length):
-        y = x.flatten()[:-pad_length]
+        y = x.transpose().flatten()[:-pad_length]
         return y
 
-    def generate(self, mel, save_path):
+    def generate(self, mel):
         self.eval()
         mels, pad_length = self._batch_mels(mel)
 
@@ -173,11 +173,11 @@ class Model(nn.Module):
 
         with torch.no_grad():
             start = time.time()
-            x = torch.zeros(bsize, 1).to(device)
-            h1 = torch.zeros(bsize, self.rnn_dims).to(device)
-            h2 = torch.zeros(bsize, self.rnn_dims).to(device)
+            x = torch.zeros(bsize, 1).to(self.device)
+            h1 = torch.zeros(bsize, self.rnn_dims).to(self.device)
+            h2 = torch.zeros(bsize, self.rnn_dims).to(self.device)
 
-            mels = torch.FloatTensor(mels).to(device)
+            mels = torch.FloatTensor(mels).to(self.device)
             mels, aux = self.upsample(mels)
 
             aux_idx = [self.aux_dims * i for i in range(5)]
@@ -215,14 +215,12 @@ class Model(nn.Module):
                 distrib = torch.distributions.Categorical(posterior)
                 sample = 2 * distrib.sample().float() / (self.n_classes - 1.) - 1.
                 output.append(sample)
-                x = sample.unsqueeze(-1).to(device)
+                x = sample.unsqueeze(-1).to(self.device)
                 if i % 100 == 0 :
                     speed = int((i + 1) / (time.time() - start))
                     print('%i/%i -- Speed: %i samples/sec'%(i + 1, seq_len, speed))
         output = torch.stack(output).cpu().numpy()
         output = self._unbatch_sound(output, pad_length)
-        if save_path:
-            dsp.save_wav(output, save_path)
         self.train()
         return output
 

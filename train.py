@@ -139,7 +139,8 @@ def generate(epoch, data_root, output_path, test_ids, samples=3):
         print('\nGenerating: %i/%i' % (i+1, samples))
         gt = 2 * gt.astype(np.float32) / (2**hparams.bits - 1.) - 1.
         dsp.save_wav(gt, f'{output_path}/{epoch}/target_{i}.wav')
-        model.generate(mel, f'{output_path}/{epoch}/generated_{i}.wav')
+        output = model.generate(mel)
+        dsp.save_wav(output, f'{output_path}/{epoch}/generated_{i}.wav')
 
 
 if __name__ == "__main__":
