@@ -151,9 +151,13 @@ class Model(nn.Module):
 
     def _batch_mels(self, mel):
         n_hops = mel.shape[1]
-        n_pad = self._round_up(n_hops, hparams.batch_size_gen) - n_hops
+        n_frames = n_hops // hparams.batch_size_gen
+        pre_pad = 5
+        idxs=[ range(k, k+n_frames+pre_pad) for k in range(0, n_hops, n_frames)]
+
+        n_pad = idxs[-1][-1]+1 - n_hops
         mel_padded = np.pad(mel, [(0, 0), (0, n_pad)], 'constant', constant_values=0)
-        mel_batched = mel_padded.reshape([mel.shape[0], hparams.batch_size_gen, -1]).swapaxes(0, 1)
+        mel_batched = mel_padded[:,idxs].swapaxes(0, 1)
         pad_length = n_pad*hparams.hop_length      # ToDo: remove dependency on dsp
         return mel_batched, pad_length
 
