@@ -67,6 +67,6 @@ if __name__ == "__main__":
 
     mel = np.load(mel_file_name)
     output = model.generate(mel)
-    dsp.save_wav(output, os.path.join(output_path, mel_file_name+'.wav'))
+    dsp.save_wav(output, os.path.join(output_path, os.path.basename(mel_file_name)+'.wav'))
 
 

@@ -217,7 +217,7 @@ class Model(nn.Module):
                 output.append(sample)
                 x = sample.unsqueeze(-1).to(self.device)
                 if i % 100 == 0 :
-                    speed = int((i + 1) / (time.time() - start))
+                    speed = int(hparams.batch_size_gen*(i + 1) / (time.time() - start))
                     print('%i/%i -- Speed: %i samples/sec'%(i + 1, seq_len, speed))
         output = torch.stack(output).cpu().numpy()
         output = self._unbatch_sound(output, pad_length)
