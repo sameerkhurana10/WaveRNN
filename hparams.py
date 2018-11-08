@@ -8,7 +8,7 @@ import tensorflow as tf
 hparams = tf.contrib.training.HParams(
     name="WaveRNN",
     batch_size=64,
-    batch_size_gen=64,
+    batch_size_gen=32,
     num_workers=8,
     rnn_dims=512,
     fc_dims=512,

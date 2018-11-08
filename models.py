@@ -149,11 +149,14 @@ class Model(nn.Module):
     def _round_up(num, divisor):
         return num + divisor - (num%divisor)
 
-    def _batch_mels(self, mel):
+    def _batch_mels(self, mel_in):
+        pre_pad = 5
+        mel = np.pad(mel_in, [(0, 0), (pre_pad, 0)], 'constant', constant_values=0)
+
         n_hops = mel.shape[1]
         n_frames = n_hops // hparams.batch_size_gen
-        pre_pad = 5
-        idxs=[ range(k, k+n_frames+pre_pad) for k in range(0, n_hops, n_frames)]
+
+        idxs=[range(k, k+n_frames+pre_pad) for k in range(0, n_hops, n_frames)]
 
         n_pad = idxs[-1][-1]+1 - n_hops
         mel_padded = np.pad(mel, [(0, 0), (0, n_pad)], 'constant', constant_values=0)
@@ -163,7 +166,9 @@ class Model(nn.Module):
 
     @staticmethod
     def _unbatch_sound(x, pad_length):
-        y = x.transpose().flatten()[:-pad_length]
+        pre_pad = 5
+        x_trimmed=x[pre_pad*hparams.hop_length:]
+        y = x_trimmed.transpose().flatten()[:-pad_length]
         return y
 
     def generate(self, mel):

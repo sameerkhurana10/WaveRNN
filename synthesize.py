@@ -13,20 +13,9 @@ options:
     -h, --help                   Show this help message and exit
 """
 import os
-import pickle
-import time
-import numpy as np
+import librosa
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from docopt import docopt
-from torch import optim
-from torch.utils.data import Dataset, DataLoader
-
-import hparams
-from hparams import hparams
-import utils.display as display
 from utils.dsp import DSP
 from models import *
 
@@ -63,10 +52,10 @@ if __name__ == "__main__":
                   upsample_factors=hparams.upsample_factors, feat_dims=hparams.feat_dims,
                   compute_dims=hparams.compute_dims, res_out_dims=hparams.res_out_dims, res_blocks=hparams.res_blocks).to(device)
 
-    model.load_state_dict(torch.load(model_path))
+    model.load_state_dict(torch.load(model_path), strict=False)
 
     mel = np.load(mel_file_name)
     output = model.generate(mel)
-    dsp.save_wav(output, os.path.join(output_path, os.path.basename(mel_file_name)+'.wav'))
+    librosa.output.write_wav(os.path.join(output_path, os.path.basename(mel_file_name)+'.wav'), output, hparams.sample_rate)
 
 
