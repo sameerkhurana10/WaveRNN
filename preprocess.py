@@ -13,11 +13,10 @@ options:
 """
 from docopt import docopt
 from multiprocessing import cpu_count
-
 from hparams import hparams
-
 import pickle, os, glob
-from utils.dsp import *
+import numpy as np
+from utils.dsp import DSP
 
 
 def get_files(path, extension='.wav') :
@@ -28,8 +27,8 @@ def get_files(path, extension='.wav') :
 
 
 def convert_file(path):
-    wav = load_wav(path, encode=False)
-    mel = melspectrogram(wav)
+    wav = dsp.load_wav(path, encode=False)
+    mel = dsp.melspectrogram(wav)
     quant = (wav + 1.) * (2**hparams.bits - 1) / 2
     return mel.astype(np.float32), quant.astype(np.int)
 
@@ -49,6 +48,7 @@ if __name__ == "__main__":
     hparams.parse(args["--hparams"])
     assert hparams.name == "WaveRNN"
 
+    dsp = DSP(hparams)
     quant_path = os.path.join(out_dir, 'quant/')
     mel_path = os.path.join(out_dir, 'mel/')
     os.makedirs(quant_path, exist_ok=True)
