@@ -70,7 +70,7 @@ class UpsampleNetwork(nn.Module):
         self.resnet = MelResNet(res_blocks, feat_dims, compute_dims, res_out_dims)
         self.resnet_stretch = Stretch2d(total_scale, 1)
         self.up_layers = nn.ModuleList()
-        for scale in upsample_scales :
+        for scale in upsample_scales:
             k_size = (1, scale * 2 + 1)
             padding = (0, scale)
             stretch = Stretch2d(scale, 1)

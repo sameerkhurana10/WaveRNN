@@ -18,6 +18,15 @@ hparams = tf.contrib.training.HParams(
     compute_dims=128,
     res_out_dims=128,
     res_blocks=10,
+
+    student_rnn_dims=512,
+    student_fc_dims=512,
+    student_upsample_factors=(5, 5, 11),
+    student_feat_dims=80,
+    student_compute_dims=128,
+    student_res_out_dims=128,
+    student_res_blocks=10,
+
     epochs=1000,
     lr=1.e-4,
     orig_sample_rate=22050,
