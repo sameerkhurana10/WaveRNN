@@ -145,48 +145,21 @@ class Model(nn.Module):
         mels, aux = self.upsample(mels)
         return mels, aux
 
-    @staticmethod
-    def _round_up(num, divisor):
-        return num + divisor - (num%divisor)
+    def generate(self, mels, device=None):
+        device = self.device if not device else device
 
-    def _batch_mels(self, mel_in):
-        pre_pad = 5
-        mel = np.pad(mel_in, [(0, 0), (pre_pad, 0)], 'constant', constant_values=0)
-
-        n_hops = mel.shape[1]
-        n_frames = n_hops // hparams.batch_size_gen
-
-        idxs=[range(k, k+n_frames+pre_pad) for k in range(0, n_hops, n_frames)]
-
-        n_pad = idxs[-1][-1]+1 - n_hops
-        mel_padded = np.pad(mel, [(0, 0), (0, n_pad)], 'constant', constant_values=0)
-        mel_batched = mel_padded[:,idxs].swapaxes(0, 1)
-        pad_length = n_pad*hparams.hop_length      # ToDo: remove dependency on dsp
-        return mel_batched, pad_length
-
-    @staticmethod
-    def _unbatch_sound(x, pad_length):
-        pre_pad = 5
-        x_trimmed=x[pre_pad*hparams.hop_length:]
-        y = x_trimmed.transpose().flatten()[:-pad_length]
-        return y
-
-    def generate(self, mel):
         self.eval()
-        mels, pad_length = self._batch_mels(mel)
-
-        bsize = mels.shape[0]
         output = []
         rnn1 = self.get_gru_cell(self.rnn1)
         rnn2 = self.get_gru_cell(self.rnn2)
 
         with torch.no_grad():
             start = time.time()
-            x = torch.zeros(bsize, 1).to(self.device)
-            h1 = torch.zeros(bsize, self.rnn_dims).to(self.device)
-            h2 = torch.zeros(bsize, self.rnn_dims).to(self.device)
+            x = torch.zeros(1, 1).to(device)
+            h1 = torch.zeros(1, self.rnn_dims).to(device)
+            h2 = torch.zeros(1, self.rnn_dims).to(device)
 
-            mels = torch.FloatTensor(mels).to(self.device)
+            mels = torch.FloatTensor(mels).to(device).unsqueeze(0)
             mels, aux = self.upsample(mels)
 
             aux_idx = [self.aux_dims * i for i in range(5)]
@@ -224,12 +197,11 @@ class Model(nn.Module):
                 distrib = torch.distributions.Categorical(posterior)
                 sample = 2 * distrib.sample().float() / (self.n_classes - 1.) - 1.
                 output.append(sample)
-                x = sample.unsqueeze(-1).to(self.device)
+                x = torch.FloatTensor([[sample]]).to(self.device)
                 if i % 100 == 0 :
-                    speed = int(hparams.batch_size_gen*(i + 1) / (time.time() - start))
+                    speed = int((i + 1) / (time.time() - start))
                     print('%i/%i -- Speed: %i samples/sec'%(i + 1, seq_len, speed))
         output = torch.stack(output).cpu().numpy()
-        output = self._unbatch_sound(output, pad_length)
         self.train()
         return output
 

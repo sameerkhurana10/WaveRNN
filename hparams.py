@@ -20,6 +20,7 @@ hparams = tf.contrib.training.HParams(
     res_blocks=10,
     epochs=1000,
     lr=1.e-4,
+    orig_sample_rate=22050,
     sample_rate=22050,
     n_fft=2048,
     num_mels=80,

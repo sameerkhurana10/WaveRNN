@@ -91,7 +91,8 @@ def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4)
 
         iters = len(trn_loader)
 
-        with torch.autograd.profiler.profile(enabled=False, use_cuda=True) as prof:
+        #with torch.autograd.profiler.profile(enabled=False, use_cuda=True) as prof:
+        with torch.autograd.detect_anomaly():
         #with torch.autograd.profiler.emit_nvtx(enabled=False):
             for i, (x, m, y) in enumerate(trn_loader) :
 
@@ -107,7 +108,7 @@ def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4)
                 loss = criterion(y_hat, y)
 
                 optimiser.zero_grad()
-                loss.backward()
+                loss.backward(retain_graph=True)
                 optimiser.step()
                 running_loss += loss.item()
 
@@ -125,7 +126,7 @@ def train(model, optimiser, epochs, batch_size, classes, seq_len, step, lr=1e-4)
 
         torch.save(model.state_dict(), MODEL_PATH)
         np.save(checkpoint_step_path, step)
-        if e % 50 == 0:
+        if e % 5 == 0:
             generate(e, data_root, output_path, test_ids)
         print(' <saved>')
 

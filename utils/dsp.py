@@ -5,6 +5,7 @@ import librosa
 class DSP(object):
     def __init__(self, hparams):
         self.sample_rate = hparams.sample_rate
+        self.orig_sample_rate = hparams.orig_sample_rate
         self.n_fft = hparams.n_fft
         self.fft_bins = self.n_fft // 2 + 1
         self.num_mels = hparams.num_mels
@@ -17,7 +18,8 @@ class DSP(object):
         hparams.hop_length=self.hop_length  # TODO: this is bad style, ideally should be refactored
 
     def load_wav(self, filename, encode=True) :
-        x = librosa.load(filename, sr=self.sample_rate)[0]
+        x = librosa.load(filename, sr=self.orig_sample_rate)[0]
+        x = librosa.resample(x,orig_sr=self.orig_sample_rate, target_sr=self.sample_rate, res_type='kaiser_best')
         if encode:
             x = self.encode_16bits(x)
         return x
