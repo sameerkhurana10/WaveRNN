@@ -139,7 +139,7 @@ class Model(nn.Module):
 
         x = torch.cat([x, a4], dim=2)
         x = F.relu(self.fc2(x))
-        return F.log_softmax(self.fc3(x), dim=-1)
+        return F.log_softmax(self.fc3(x)/hparams.temperature, dim=-1)
 
     def preview_upsampling(self, mels) :
         mels, aux = self.upsample(mels)

@@ -78,7 +78,7 @@ def train(teacher, student, optimiser, epochs, step, lr=1e-4):
 
     for p in optimiser.param_groups:
         p['lr'] = lr
-    criterion = nn.NLLLoss().to(device)
+    criterion = nn.L1Loss().to(device)
 
     for e in range(epochs):
         trn_loader = DataLoader(dataset, collate_fn=collate, batch_size=hparams.batch_size,
@@ -99,13 +99,16 @@ def train(teacher, student, optimiser, epochs, step, lr=1e-4):
                 x, m, y = x.to(device), m.to(device), y.to(device)
 
                 if no_cuda:
-                    y_hat = model(x, m)
+                    y_teacher_hat = teacher(x, m)
+                    y_student_hat = student(x, m)
                 else:
-                    y_hat = torch.nn.parallel.data_parallel(model, (x, m))
+                    y_teacher_hat = torch.nn.parallel.data_parallel(teacher, (x, m))
+                    y_student_hat = torch.nn.parallel.data_parallel(student, (x, m))
 
-                y_hat = y_hat.transpose(1, 2).unsqueeze(-1)
-                y = y.unsqueeze(-1)
-                loss = criterion(y_hat, y)
+                y_teacher_hat = y_teacher_hat.transpose(1, 2).unsqueeze(-1)
+                y_student_hat = y_student_hat.transpose(1, 2).unsqueeze(-1)
+
+                loss = criterion(y_teacher_hat, y_student_hat)
 
                 optimiser.zero_grad()
                 loss.backward(retain_graph=True)
@@ -124,14 +127,14 @@ def train(teacher, student, optimiser, epochs, step, lr=1e-4):
         #print(prof.table(sort_by='cuda_time'))
         #prof.export_chrome_trace(f'{output_path}/chrome_trace')
 
-        torch.save(model.state_dict(), MODEL_PATH)
+        torch.save(student.state_dict(), STUDENT_MODEL_PATH)
         np.save(checkpoint_step_path, step)
         if e % 5 == 0:
-            generate(e, data_root, output_path, test_ids)
+            generate(student, e, data_root, output_path, test_ids)
         print(' <saved>')
 
 
-def generate(epoch, data_root, output_path, test_ids, samples=3):
+def generate(model, epoch, data_root, output_path, test_ids, samples=3):
     test_mels = [np.load(f'{data_root}/mel/{dataset_id}.npy') for dataset_id in test_ids[:samples]]
     ground_truth = [np.load(f'{data_root}/quant/{dataset_id}.npy') for dataset_id in test_ids[:samples]]
     os.makedirs(f'{output_path}/{epoch}', exist_ok=True)
@@ -139,9 +142,9 @@ def generate(epoch, data_root, output_path, test_ids, samples=3):
     for i, (gt, mel) in enumerate(zip(ground_truth, test_mels)):
         print('\nGenerating: %i/%i' % (i+1, samples))
         gt = 2 * gt.astype(np.float32) / (2**hparams.bits - 1.) - 1.
-        dsp.save_wav(gt, f'{output_path}/{epoch}/target_{i}.wav')
+        dsp.save_wav(gt, f'{output_path}/{epoch}/student_target_{i}.wav')
         output = model.generate(mel)
-        dsp.save_wav(output, f'{output_path}/{epoch}/generated_{i}.wav')
+        dsp.save_wav(output, f'{output_path}/{epoch}/student_generated_{i}.wav')
 
 
 if __name__ == "__main__":
@@ -180,6 +183,7 @@ if __name__ == "__main__":
     os.makedirs(f'{checkpoint_dir}/', exist_ok=True)
 
     MODEL_PATH = f'{checkpoint_dir}/model.pyt'
+    STUDENT_MODEL_PATH = f'{checkpoint_dir}/student_model.pyt'
     #data_root = f'data/'
     checkpoint_step_path = f'{checkpoint_dir}/model_step.npy'
     os.makedirs(output_path, exist_ok=True)
@@ -200,6 +204,8 @@ if __name__ == "__main__":
     assert(os.path.exists(MODEL_PATH))
     print("\t\t Loading saved state")
     teacher.load_state_dict(torch.load(MODEL_PATH))
+    for param in teacher.parameters():
+        param.requires_grad = False
 
     student = Model(device, rnn_dims=hparams.student_rnn_dims, fc_dims=hparams.student_fc_dims, bits=hparams.bits,
                     pad=hparams.pad, upsample_factors=hparams.student_upsample_factors,
@@ -209,5 +215,5 @@ if __name__ == "__main__":
     optimiser = optim.Adam(student.parameters())
     train(teacher, student, optimiser, epochs=hparams.epochs, step=step, lr=hparams.lr)
 
-    generate(step, data_root, output_path, test_ids)
+    generate(student, step, data_root, output_path, test_ids)
 
