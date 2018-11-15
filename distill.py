@@ -102,7 +102,7 @@ def train(teacher, student, optimiser, epochs, step, lr=1e-4):
                 y_teacher_hat = torch.nn.parallel.data_parallel(teacher, (x, m))
             y_teacher_hat = y_teacher_hat.transpose(1, 2).unsqueeze(-1)
 
-            for kiter in range(5):
+            for kiter in range(hparams.iter_per_epoch):
                 optimiser.zero_grad()
                 if no_cuda:
                     y_student_hat = student(x, m)

@@ -27,8 +27,9 @@ hparams = tf.contrib.training.HParams(
     student_compute_dims=128,
     student_res_out_dims=128,
     student_res_blocks=10,
-    temperature=20.,
 
+    temperature=20.,
+    iter_per_epoch=5,
     epochs=1000,
     lr=1.e-4,
     orig_sample_rate=22050,
