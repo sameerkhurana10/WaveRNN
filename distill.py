@@ -80,45 +80,47 @@ def train(teacher, student, optimiser, epochs, step, lr=1e-4):
         p['lr'] = lr
     criterion = nn.L1Loss().to(device)
 
+    trn_loader = DataLoader(dataset, collate_fn=collate, batch_size=hparams.batch_size,
+                            num_workers=hparams.num_workers, shuffle=True, pin_memory=(not no_cuda))
+    iters = len(trn_loader)
+
     for e in range(epochs):
-        trn_loader = DataLoader(dataset, collate_fn=collate, batch_size=hparams.batch_size,
-                                num_workers=hparams.num_workers, shuffle=True, pin_memory=(not no_cuda))
 
         running_loss = 0.
         val_loss = 0.
         start = time.time()
-        running_loss = 0.
-
-        iters = len(trn_loader)
 
         #with torch.autograd.profiler.profile(enabled=False, use_cuda=True) as prof:
-        with torch.autograd.detect_anomaly():
+        #with torch.autograd.detect_anomaly():
         #with torch.autograd.profiler.emit_nvtx(enabled=False):
-            for i, (x, m, y) in enumerate(trn_loader) :
+        for i, (x, m, y) in enumerate(trn_loader) :
 
-                x, m, y = x.to(device), m.to(device), y.to(device)
+            x, m, y = x.to(device), m.to(device), y.to(device)
+            if no_cuda:
+                y_teacher_hat = teacher(x, m)
+            else:
+                y_teacher_hat = torch.nn.parallel.data_parallel(teacher, (x, m))
+            y_teacher_hat = y_teacher_hat.transpose(1, 2).unsqueeze(-1)
 
+            for kiter in range(5):
+                optimiser.zero_grad()
                 if no_cuda:
-                    y_teacher_hat = teacher(x, m)
                     y_student_hat = student(x, m)
                 else:
-                    y_teacher_hat = torch.nn.parallel.data_parallel(teacher, (x, m))
                     y_student_hat = torch.nn.parallel.data_parallel(student, (x, m))
 
-                y_teacher_hat = y_teacher_hat.transpose(1, 2).unsqueeze(-1)
                 y_student_hat = y_student_hat.transpose(1, 2).unsqueeze(-1)
 
-                loss = criterion(y_teacher_hat, y_student_hat)
+                loss = 1000.*criterion(y_teacher_hat, y_student_hat)
 
-                optimiser.zero_grad()
-                loss.backward(retain_graph=True)
+                loss.backward()
                 optimiser.step()
                 running_loss += loss.item()
 
-                speed = (i + 1) / (time.time() - start)
                 avg_loss = running_loss / (i + 1)
 
                 step += 1
+                speed = step / (time.time() - start)
 
                 k = step // 1000
                 print('Epoch: %i/%i -- Batch: %i/%i -- Loss: %.3f -- Speed: %.2f steps/sec -- Step: %ik '%
@@ -129,7 +131,7 @@ def train(teacher, student, optimiser, epochs, step, lr=1e-4):
 
         torch.save(student.state_dict(), STUDENT_MODEL_PATH)
         np.save(checkpoint_step_path, step)
-        if e % 5 == 0:
+        if e % 20 == 0:
             generate(student, e, data_root, output_path, test_ids)
         print(' <saved>')
 
@@ -174,6 +176,7 @@ if __name__ == "__main__":
     hparams.parse(args["--hparams"])
     assert hparams.name == "WaveRNN"
     #print(hparams_debug_string())
+    hparams.distill=True
 
     dsp = DSP(hparams)
     hparams.hop_length=dsp.hop_length
@@ -211,6 +214,7 @@ if __name__ == "__main__":
                     pad=hparams.pad, upsample_factors=hparams.student_upsample_factors,
                     feat_dims=hparams.student_feat_dims, compute_dims=hparams.student_compute_dims,
                     res_out_dims=hparams.student_res_out_dims, res_blocks=hparams.student_res_blocks).to(device)
+    #student.load_state_dict(torch.load(STUDENT_MODEL_PATH))
 
     optimiser = optim.Adam(student.parameters())
     train(teacher, student, optimiser, epochs=hparams.epochs, step=step, lr=hparams.lr)
