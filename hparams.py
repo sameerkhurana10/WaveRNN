@@ -8,8 +8,9 @@ import tensorflow as tf
 hparams = tf.contrib.training.HParams(
     name="WaveRNN",
     distill=False,
-    batch_size=64,
+    batch_size=32,
     batch_size_gen=16,
+
     num_workers=8,
     rnn_dims=512,
     fc_dims=512,
@@ -20,16 +21,15 @@ hparams = tf.contrib.training.HParams(
     res_out_dims=128,
     res_blocks=10,
 
-    student_rnn_dims=512,
-    student_fc_dims=512,
+    student_rnn_dims=128,
+    student_fc_dims=64,
     student_upsample_factors=(5, 5, 11),
     student_feat_dims=80,
-    student_compute_dims=128,
-    student_res_out_dims=128,
-    student_res_blocks=10,
+    student_compute_dims=32,
+    student_res_out_dims=32,
+    student_res_blocks=5,
 
-    temperature=20.,
-    iter_per_epoch=5,
+    temperature=5.,
     epochs=1000,
     lr=1.e-4,
     orig_sample_rate=22050,

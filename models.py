@@ -139,7 +139,7 @@ class Model(nn.Module):
 
         x = torch.cat([x, a4], dim=2)
         x = F.relu(self.fc2(x))
-        ret = F.log_softmax(self.fc3(x), dim=-1) if not hparams.distill else  F.softmax(self.fc3(x)/hparams.temperature, dim=-1)
+        ret = F.log_softmax(self.fc3(x), dim=-1) if not hparams.distill else F.softmax(self.fc3(x)/hparams.temperature, dim=-1)
         return ret
 
     def preview_upsampling(self, mels) :
@@ -194,12 +194,13 @@ class Model(nn.Module):
                 x = torch.cat([x, a4_t], dim=1)
                 x = F.relu(self.fc2(x))
                 x = self.fc3(x)
-                posterior = F.softmax(x, dim=1)
+                posterior = F.softmax(x, dim=1).view(-1)
                 distrib = torch.distributions.Categorical(posterior)
                 sample = 2 * distrib.sample().float() / (self.n_classes - 1.) - 1.
                 output.append(sample)
                 x = torch.FloatTensor([[sample]]).to(self.device)
-                if i % 100 == 0 :
+
+                if i % 100 == 0:
                     speed = int((i + 1) / (time.time() - start))
                     print('%i/%i -- Speed: %i samples/sec'%(i + 1, seq_len, speed))
         output = torch.stack(output).cpu().numpy()

@@ -78,7 +78,7 @@ def train(teacher, student, optimiser, epochs, step, lr=1e-4):
 
     for p in optimiser.param_groups:
         p['lr'] = lr
-    criterion = nn.L1Loss().to(device)
+    criterion = nn.MSELoss().to(device)
 
     trn_loader = DataLoader(dataset, collate_fn=collate, batch_size=hparams.batch_size,
                             num_workers=hparams.num_workers, shuffle=True, pin_memory=(not no_cuda))
@@ -93,38 +93,40 @@ def train(teacher, student, optimiser, epochs, step, lr=1e-4):
         #with torch.autograd.profiler.profile(enabled=False, use_cuda=True) as prof:
         #with torch.autograd.detect_anomaly():
         #with torch.autograd.profiler.emit_nvtx(enabled=False):
-        for i, (x, m, y) in enumerate(trn_loader) :
+        for i, (x, m, y) in enumerate(trn_loader):
 
             x, m, y = x.to(device), m.to(device), y.to(device)
-            if no_cuda:
+
+            with torch.no_grad():
+                # if no_cuda:
+                #     y_teacher_hat = teacher(x, m)
+                # else:
+                #     y_teacher_hat = torch.nn.parallel.data_parallel(teacher, (x, m))
                 y_teacher_hat = teacher(x, m)
-            else:
-                y_teacher_hat = torch.nn.parallel.data_parallel(teacher, (x, m))
-            y_teacher_hat = y_teacher_hat.transpose(1, 2).unsqueeze(-1)
+                y_teacher_hat = y_teacher_hat.transpose(1, 2).unsqueeze(-1)
 
-            for kiter in range(hparams.iter_per_epoch):
-                optimiser.zero_grad()
-                if no_cuda:
-                    y_student_hat = student(x, m)
-                else:
-                    y_student_hat = torch.nn.parallel.data_parallel(student, (x, m))
+            optimiser.zero_grad()
+            # if no_cuda:
+            #     y_student_hat = student(x, m)
+            # else:
+            #     y_student_hat = torch.nn.parallel.data_parallel(student, (x, m))
+            y_student_hat = student(x, m)
+            y_student_hat = y_student_hat.transpose(1, 2).unsqueeze(-1)
 
-                y_student_hat = y_student_hat.transpose(1, 2).unsqueeze(-1)
+            loss = 100000.*criterion(y_teacher_hat, y_student_hat)
 
-                loss = 1000.*criterion(y_teacher_hat, y_student_hat)
+            loss.backward()
+            optimiser.step()
+            running_loss += loss.item()
 
-                loss.backward()
-                optimiser.step()
-                running_loss += loss.item()
+            avg_loss = running_loss / (i + 1)
 
-                avg_loss = running_loss / (i + 1)
+            step += 1
+            speed = (i+1) / (time.time() - start)
 
-                step += 1
-                speed = step / (time.time() - start)
-
-                k = step // 1000
-                print('Epoch: %i/%i -- Batch: %i/%i -- Loss: %.3f -- Speed: %.2f steps/sec -- Step: %ik '%
-                        (e + 1, epochs, i + 1, iters, avg_loss, speed, k))
+            k = step // 1000
+            print('Epoch: %i/%i -- Batch: %i/%i -- Loss: %.3f -- Speed: %.2f steps/sec -- Step: %ik '%
+                    (e + 1, epochs, i + 1, iters, avg_loss, speed, k))
 
         #print(prof.table(sort_by='cuda_time'))
         #prof.export_chrome_trace(f'{output_path}/chrome_trace')
@@ -167,6 +169,7 @@ if __name__ == "__main__":
     no_cuda = args["--no-cuda"]
 
     device = torch.device("cpu" if no_cuda else "cuda")
+    print(device)
 
     # Load preset if specified
     if preset is not None:
@@ -214,7 +217,17 @@ if __name__ == "__main__":
                     pad=hparams.pad, upsample_factors=hparams.student_upsample_factors,
                     feat_dims=hparams.student_feat_dims, compute_dims=hparams.student_compute_dims,
                     res_out_dims=hparams.student_res_out_dims, res_blocks=hparams.student_res_blocks).to(device)
-    #student.load_state_dict(torch.load(STUDENT_MODEL_PATH))
+    try:
+        student.load_state_dict(torch.load(STUDENT_MODEL_PATH))
+    except:
+        print("No saved student model.")
+
+
+    mel = np.load(f'{data_root}/mel/{test_ids[0]}.npy')
+    ground_truth = np.load(f'{data_root}/quant/{test_ids[0]}.npy')
+
+    # te_out = teacher.generate(mel)
+    # st_out = student.generate(mel)
 
     optimiser = optim.Adam(student.parameters())
     train(teacher, student, optimiser, epochs=hparams.epochs, step=step, lr=hparams.lr)
