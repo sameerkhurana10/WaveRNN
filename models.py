@@ -141,61 +141,61 @@ class Model(nn.Module):
         x = F.relu(self.fc2(x))
         return F.log_softmax(self.fc3(x), dim=-1)
 
-def generate(self, mels) :
-    self.eval()
-    output = []
-    rnn1 = self.get_gru_cell(self.rnn1)
-    rnn2 = self.get_gru_cell(self.rnn2)
+    def generate(self, mels) :
+        self.eval()
+        output = []
+        rnn1 = self.get_gru_cell(self.rnn1)
+        rnn2 = self.get_gru_cell(self.rnn2)
 
-    with torch.no_grad() :
-        x = torch.zeros(1, 1).cuda()
-        h1 = torch.zeros(1, self.rnn_dims).cuda()
-        h2 = torch.zeros(1, self.rnn_dims).cuda()
+        with torch.no_grad() :
+            x = torch.zeros(1, 1).cuda()
+            h1 = torch.zeros(1, self.rnn_dims).cuda()
+            h2 = torch.zeros(1, self.rnn_dims).cuda()
 
-        mels = torch.FloatTensor(mels).cuda().unsqueeze(0)
-        mels, aux = self.upsample(mels)
+            mels = torch.FloatTensor(mels).cuda().unsqueeze(0)
+            mels, aux = self.upsample(mels)
 
-        aux_idx = [self.aux_dims * i for i in range(5)]
-        a1 = aux[:, :, aux_idx[0]:aux_idx[1]]
-        a2 = aux[:, :, aux_idx[1]:aux_idx[2]]
-        a3 = aux[:, :, aux_idx[2]:aux_idx[3]]
-        a4 = aux[:, :, aux_idx[3]:aux_idx[4]]
+            aux_idx = [self.aux_dims * i for i in range(5)]
+            a1 = aux[:, :, aux_idx[0]:aux_idx[1]]
+            a2 = aux[:, :, aux_idx[1]:aux_idx[2]]
+            a3 = aux[:, :, aux_idx[2]:aux_idx[3]]
+            a4 = aux[:, :, aux_idx[3]:aux_idx[4]]
 
-        seq_len = mels.size(1)
+            seq_len = mels.size(1)
 
-        for i in tqdm(range(seq_len)) :
+            for i in tqdm(range(seq_len)) :
 
-            m_t = mels[:, i, :]
-            a1_t = a1[:, i, :]
-            a2_t = a2[:, i, :]
-            a3_t = a3[:, i, :]
-            a4_t = a4[:, i, :]
+                m_t = mels[:, i, :]
+                a1_t = a1[:, i, :]
+                a2_t = a2[:, i, :]
+                a3_t = a3[:, i, :]
+                a4_t = a4[:, i, :]
 
-            x = torch.cat([x, m_t, a1_t], dim=1)
-            x = self.I(x)
-            h1 = rnn1(x, h1)
+                x = torch.cat([x, m_t, a1_t], dim=1)
+                x = self.I(x)
+                h1 = rnn1(x, h1)
 
-            x = x + h1
-            inp = torch.cat([x, a2_t], dim=1)
-            h2 = rnn2(inp, h2)
+                x = x + h1
+                inp = torch.cat([x, a2_t], dim=1)
+                h2 = rnn2(inp, h2)
 
-            x = x + h2
-            x = torch.cat([x, a3_t], dim=1)
-            x = F.relu(self.fc1(x))
+                x = x + h2
+                x = torch.cat([x, a3_t], dim=1)
+                x = F.relu(self.fc1(x))
 
-            x = torch.cat([x, a4_t], dim=1)
-            x = F.relu(self.fc2(x))
-            x = self.fc3(x)
+                x = torch.cat([x, a4_t], dim=1)
+                x = F.relu(self.fc2(x))
+                x = self.fc3(x)
 
-            posterior = F.softmax(x, dim=1).view(-1)
-            distrib = torch.distributions.Categorical(posterior)
-            sample = 2 * distrib.sample().float() / (self.n_classes - 1.) - 1.
+                posterior = F.softmax(x, dim=1).view(-1)
+                distrib = torch.distributions.Categorical(posterior)
+                sample = 2 * distrib.sample().float() / (self.n_classes - 1.) - 1.
 
-            output.append(sample.view(-1))
-            x = torch.FloatTensor([[sample]]).cuda()
-    output = torch.stack(output).cpu().numpy()
-    self.train()
-    return output
+                output.append(sample.view(-1))
+                x = torch.FloatTensor([[sample]]).cuda()
+        output = torch.stack(output).cpu().numpy()
+        self.train()
+        return output
 
     def preview_upsampling(self, mels) :
         mels, aux = self.upsample(mels)
