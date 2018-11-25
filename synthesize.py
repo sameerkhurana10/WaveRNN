@@ -55,7 +55,7 @@ if __name__ == "__main__":
     model.load_state_dict(torch.load(model_path), strict=False)
 
     mel = np.load(mel_file_name)
-    output = model.generate(mel)
+    output = model.batch_generate(mel)
     librosa.output.write_wav(os.path.join(output_path, os.path.basename(mel_file_name)+'.wav'), output, hparams.sample_rate)
 
 
