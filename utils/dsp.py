@@ -14,7 +14,7 @@ class DSP(object):
         self.min_level_db = hparams.min_level_db
         self.ref_level_db = hparams.ref_level_db
         self.mel_basis = None
-        hparams.hop_length=self.hop_length  # TODO: this is bad style, ideally should be refactored
+        hparams.hop_length = self.hop_length  # TODO: this is bad style, ideally should be refactored
 
     def load_wav(self, filename, encode=True) :
         x = librosa.load(filename, sr=self.sample_rate)[0]

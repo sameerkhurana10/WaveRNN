@@ -176,6 +176,7 @@ class Model(nn.Module):
         mels, pad_length = self._batch_mels(mel)
 
         bsize = mels.shape[0]
+
         output = []
         rnn1 = self.get_gru_cell(self.rnn1)
         rnn2 = self.get_gru_cell(self.rnn2)
@@ -220,11 +221,11 @@ class Model(nn.Module):
                 x = torch.cat([x, a4_t], dim=1)
                 x = F.relu(self.fc2(x))
                 x = self.fc3(x)
-                posterior = F.softmax(x, dim=1)
+                posterior = F.softmax(x, dim=1).view(bsize,-1)
                 distrib = torch.distributions.Categorical(posterior)
                 sample = 2 * distrib.sample().float() / (self.n_classes - 1.) - 1.
-                output.append(sample)
-                x = sample.unsqueeze(-1).to(self.device)
+                output.append(sample.view(-1))
+                x = sample.view(bsize, -1).to(self.device)
                 if i % 100 == 0 :
                     speed = int(hparams.batch_size_gen*(i + 1) / (time.time() - start))
                     print('%i/%i -- Speed: %i samples/sec'%(i + 1, seq_len, speed))
